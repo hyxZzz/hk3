@@ -5,24 +5,19 @@ from utils.common import ComputeHeading, ComputePitch
 from flat_models.trajectory import Aircraft, Missiles
 
 
-def sample_spherical(npoints, ndim=3):
-    vec = np.random.randn(ndim, npoints)
-    vec /= np.linalg.norm(vec, axis=0)
-    return vec
-
-
 # 环境的来袭导弹数num_missiles，最大步数StepNum
 
 def init_env(num_missiles=3, StepNum=1000, interceptor_num=8):
-    # 飞机的初始位置，x和y为[-10000, 10000], z为服从2000为均值，300为标准差的正态分布
+    # 飞机的初始位置，x和y为[-10000, 10000], z为飞行高度
 
-    r = 20000
+    horizontal_radius_major = 20000
+    horizontal_radius_minor = 15000
+    vertical_span = 3000
 
-    r_h = 5000
-    # 飞行高度0.5~15Km
+    # 飞行高度 8~12Km
     a_x = np.random.uniform(-10000, 10000)
     a_y = np.random.uniform(-10000, 10000)
-    a_z = np.random.uniform(550, 15000)
+    a_z = np.random.uniform(8000, 12000)
 
     # print(a_x, a_y, a_z)
 
@@ -36,24 +31,13 @@ def init_env(num_missiles=3, StepNum=1000, interceptor_num=8):
     # aHeading = np.random.uniform(0, 2)
     aHeading = aHeading * m.pi
 
-    # 以a_x, a_y, a_z为球心, 均匀生成导弹位置
-    xi, yi, zi = sample_spherical(num_missiles)  # 单位球上取点
-
-    zi = zi
-    # for i in range(len(xi)):
-    #     if zi[i] < 0:
-    #         zi[i] = 0
-
-    # print(xi, yi, zi)
-    # 扩张半径与平移坐标
-
-    xi_r = xi * r + a_x
-    yi_r = yi * r + a_y
-    # 导弹的发射高度不能为负数
-    zi_r = zi * r_h + a_z  # 导弹的竖直高度不能太高，在飞机的10km范围内
-    for i in range(len(zi_r)):
-        if zi_r[i] < 0:
-            zi_r[i] = 0
+    # 在飞机周围的水平椭圆区域生成导弹位置
+    angles = np.random.uniform(0, 2 * m.pi, num_missiles)
+    radial_scale = np.random.uniform(0.7, 1.0, num_missiles)
+    xi_r = a_x + horizontal_radius_major * radial_scale * np.cos(angles)
+    yi_r = a_y + horizontal_radius_minor * radial_scale * np.sin(angles)
+    zi_r = a_z + np.random.uniform(-vertical_span, vertical_span, num_missiles)
+    zi_r = np.clip(zi_r, 0, None)
     mposList = []
     mHeadingList = []
     mPitchList = []
@@ -65,14 +49,20 @@ def init_env(num_missiles=3, StepNum=1000, interceptor_num=8):
         mPitchList.append(ComputePitch([a_x, a_z, a_y], [xi_r[i], zi_r[i], yi_r[i]]))
     # print(mposList)
 
-    # 导弹速度不低于2马赫
-    m_v = np.random.uniform(2, 3)
-    m_v = m_v * 340
+    # 初始导弹速度在0.7~0.9马赫，加速段提升至目标速度
+    m_v = np.random.uniform(0.7, 0.9) * 340
 
     aircraft_agent = [Aircraft([a_x, a_z, a_y], V=a_v, Pitch=aPitch, Heading=aHeading)]
     missiles_list = []
     for i in range(len(mposList)):
-        missiles_list.append(Missiles(mposList[i], V=m_v, Pitch=mPitchList[i], Heading=mHeadingList[i]))
+        missiles_list.append(
+            Missiles(
+                mposList[i],
+                V=m_v,
+                Pitch=mPitchList[i],
+                Heading=mHeadingList[i],
+            )
+        )
 
     # 初始化环境
     env = ManeuverEnv(
