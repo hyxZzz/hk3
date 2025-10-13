@@ -29,9 +29,9 @@ class EvaluationConfig:
 
     episodes: int = 100
     num_missiles: int = 3
-    step_num: int = 3000
-    gamma: float = 0.99
-    learning_rate: float = 0.001
+    step_num: int = 3500
+    gamma: float = 0.993
+    learning_rate: float = 5e-4
 
 
 EPISODE_PATTERN = re.compile(r"DDQN_episode(\d+)\.pth$")

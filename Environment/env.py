@@ -13,7 +13,7 @@ from Environment.reset_env import reset_para
 act_num = 29  # 机动动作的多少
 Gostep = 1  # 机动策略改变的频率
 
-DANGER_DISTANCE = 2300 # 危险距离 用于奖励函数的非线性分段
+DANGER_DISTANCE = 3000 # 危险距离 用于奖励函数的非线性分段
 LanchGap = 70 # 发射间隔
 ERRACTIONSCALE = 2 # 惩罚加的系数 原先设为10
 DANGERSCALE = 3 # 危险情况下 距离影响的系数 原先设为5
@@ -52,6 +52,7 @@ class ManeuverEnv:
         self.missileList = missileList
         self.aircraftList = aircraftList
         self.interceptorList = []
+        self.position_scale = 25000.0
         self.At_1 = 0
         # 初始化拦截弹列表
         for _ in range(InterceptorNum):
@@ -162,16 +163,14 @@ class ManeuverEnv:
                 # 拦截弹如果没有发射，随飞机一起飞行
                 for j in range(len(self.interceptorList)):
                     if self.interceptorList[j].T_i == -1:
-                        self.interceptorList[j].X_i = x_a
-                        self.interceptorList[j].Y_i = y_a
-                        self.interceptorList[j].Z_i = z_a
-                        self.interceptorList[j].Pitch_i = Pitch_a
-                        self.interceptorList[j].Heading_i = Heading_a
+                        self.interceptorList[j].sync_with_aircraft(
+                            [x_a, y_a, z_a], Pitch_a, Heading_a, self.aircraftList.V
+                        )
                         self.observation_interceptors[j] = np.array([x_a, y_a, z_a, Pitch_a, Heading_a, 0])
                     ix, iy, iz = self.interceptorList[j].X_i, self.interceptorList[j].Y_i, self.interceptorList[j].Z_i
 
                     # 拦截弹发射成功，根据起拦截目标更新位置
-                    if self.interceptorList[j].T_i == i:
+                    if self.interceptorList[j].T_i == i and self.interceptorList[j].attacking != 1:
                         ix, iy, iz = self.interceptorList[j].InterceptorPosition([mx, my, mz], self.missileList[i].V,
                                                                                  self.missileList[i].Pitch,
                                                                                  self.missileList[i].Heading)
@@ -266,7 +265,7 @@ class ManeuverEnv:
                     ix, iy, iz = self.interceptorList[j].X_i, self.interceptorList[j].Y_i, self.interceptorList[j].Z_i
 
                     # 拦截弹发射成功，根据起拦截目标更新位置
-                    if self.interceptorList[j].T_i == i:
+                    if self.interceptorList[j].T_i == i and self.interceptorList[j].attacking != 1:
                         ix, iy, iz = self.interceptorList[j].InterceptorPosition([mx, my, mz], self.missileList[i].V,
                                                                                  self.missileList[i].Pitch,
                                                                                  self.missileList[i].Heading)
@@ -366,26 +365,27 @@ class ManeuverEnv:
 
     def heightReward(self, h):
 
-        # 最大值
-        maxValue = m.log(15000, 10)
+        safe_min = 8000
+        safe_max = 12000
+        tolerance = 1000
+        hard_min = safe_min - tolerance
+        hard_max = safe_max + tolerance
 
-        if h < 500 or h > 15000:
-            # rh = -100
-            rh = -100
-            self.escapeFlag = 0  # 撞地结束或高度太高失速结束
-        # 第一段斜率大
-        elif h >= 500 and h < 6000:
-            rh = 0.0005 * h
+        if h < hard_min or h > hard_max:
+            self.escapeFlag = 0  # 撞地结束或高度过高失速结束
+            return -1.5
 
-        # 第二段比第一段斜率小
-        elif h >= 6000 and h < 8000:
-            rh = 0.00045 * h
+        if h < safe_min:
+            ratio = (h - hard_min) / (safe_min - hard_min)
+            return -1.0 + 2.0 * ratio
+        if h > safe_max:
+            ratio = (hard_max - h) / (hard_max - safe_max)
+            return -1.0 + 2.0 * ratio
 
-        # 第三段LOG函数
-        else:
-            rh = m.log(h, 10)
-
-        return rh / maxValue
+        center = (safe_min + safe_max) / 2.0
+        span = (safe_max - safe_min) / 2.0
+        offset = (h - center) / span
+        return 1.0 - offset ** 2
 
     """
         距离奖励：
@@ -396,10 +396,17 @@ class ManeuverEnv:
 
         rd = 0
         rdMin = 10e8
+        engagement_range = 25000.0
         for i in range(missileState.shape[0]):
             if self.missileList[i].attacking:
                 D = abs(np.linalg.norm((missileState[i] - planeState)))
-                rd = m.log(D/DANGER_DISTANCE) / m.log(20000/DANGER_DISTANCE)
+                D = max(D, 1.0)
+                scale = engagement_range / max(DANGER_DISTANCE, 1.0)
+                if scale <= 1:
+                    rd = -1.5
+                else:
+                    rd = m.log(D / DANGER_DISTANCE) / m.log(scale)
+                rd = max(min(rd, 1.0), -1.5)
         # 计算奖励最小的导弹
             if rd < rdMin:
                 rdMin = rd
@@ -432,7 +439,7 @@ class ManeuverEnv:
             飞机高度奖励，防止撞地
         """
 
-        C1 = 1  # 飞机高度奖励的系数
+        C1 = 1.2  # 飞机高度奖励的系数
         h = planeState[1]
         rh = self.heightReward(h)
         rd += C1 * rh
@@ -451,7 +458,7 @@ class ManeuverEnv:
                 D = abs(np.linalg.norm((missileState[target_index] - planeState)))
                 # 如果距离大于一半 惩罚
                 if D > D0 / 2:
-                    rd -= 0.5
+                    rd -= 0.4
                     # 如果当前动作是发射远距离的导弹 这一步视为错误
                     if interceptor_goal == target_index:
                         rd -= ERRACTIONSCALE
@@ -607,13 +614,13 @@ class ManeuverEnv:
 
     def SparseReward(self):
         rd = 0
-        C4 = 1
+        C4 = 0.75
 
         # C4 = 100
         if self.escapeFlag == -1:
             dist, _ = self.getClosetMissileDist()
             danger_multiplier = 1.0 if dist <= DANGER_DISTANCE else 0.5
-            rd = - 0.08 * C4 * danger_multiplier * self.getRemainMissileNum() # 每一颗存在的导弹都要有惩罚
+            rd = - 0.06 * C4 * danger_multiplier * self.getRemainMissileNum() # 每一颗存在的导弹都要有惩罚
         elif self.escapeFlag == 0:
             rd = - C4
         elif self.escapeFlag == 1:
@@ -829,6 +836,7 @@ class ManeuverEnv:
         self.missileList = missileList
         self.aircraftList = aircraftList
         self.interceptorList = []
+        self.position_scale = 25000.0
         # 初始化拦截弹列表
         for i in range(self.interceptorNum):
             self.interceptorList.append(Interceptor([self.aircraftList.X, self.aircraftList.Y, self.aircraftList.Z],
@@ -874,10 +882,10 @@ class ManeuverEnv:
     '''reverse为TRUE时 量钢化'''
     def normalizeState(self, state, reverse=False):
         if reverse:
-            state[:, 0:3] = state[:, 0:3] * 20000
+            state[:, 0:3] = state[:, 0:3] * self.position_scale
             state[:, 3:6] = state[:, 3:6] * m.pi
         else:
-            state[:, 0:3] = state[:, 0:3] / 20000
+            state[:, 0:3] = state[:, 0:3] / self.position_scale
             state[:, 3:6] = state[:, 3:6] / m.pi
         return state
 
@@ -894,21 +902,22 @@ class ManeuverEnv:
         # 两次发射间隔步数
         if abs(self.t - self.lanchTime) >= LanchGap:
             # 目标没锁满
-            if self.LockConstraint(interceptor_goal):
-                for i in range(self.interceptorNum):
-                    # 待发射的导弹
-                    if self.interceptorList[i].T_i == -1:
-                        self.interceptorList[i].attacking = 0
-                        self.interceptorList[i].X_i = self.aircraftList.X
-                        self.interceptorList[i].Y_i = self.aircraftList.Y
-                        self.interceptorList[i].Z_i = self.aircraftList.Z
-                        self.interceptorList[i].Pitch_i = self.aircraftList.Pitch
-                        self.interceptorList[i].Heading_i = self.aircraftList.Heading
-                        self.interceptorList[i].T_i = interceptor_goal
-                        self.interceptorList[i].V_i = self.interceptorSpeed
-                        self.interceptor_remain -= 1
-                        self.lanchTime = self.t
-                        return True
+                    if self.LockConstraint(interceptor_goal):
+                        for i in range(self.interceptorNum):
+                            # 待发射的导弹
+                            if self.interceptorList[i].T_i == -1:
+                                interceptor = self.interceptorList[i]
+                                interceptor.sync_with_aircraft(
+                                    [self.aircraftList.X, self.aircraftList.Y, self.aircraftList.Z],
+                                    self.aircraftList.Pitch,
+                                    self.aircraftList.Heading,
+                                    self.aircraftList.V,
+                                )
+                                launch_speed = max(self.aircraftList.V, self.interceptorSpeed)
+                                interceptor.begin_pursuit(interceptor_goal, launch_speed)
+                                self.interceptor_remain -= 1
+                                self.lanchTime = self.t
+                                return True
 
         else:
             return False

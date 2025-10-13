@@ -5,24 +5,15 @@ from utils.common import ComputeHeading, ComputePitch
 from flat_models.trajectory import Aircraft, Missiles
 
 
-def sample_spherical(npoints, ndim=3):
-    vec = np.random.randn(ndim, npoints)
-    vec /= np.linalg.norm(vec, axis=0)
-    return vec
-
-
 # 环境的来袭导弹数num_missiles，最大步数StepNum
 
 def init_env(num_missiles=3, StepNum=1000, interceptor_num=8):
     # 飞机的初始位置，x和y为[-10000, 10000], z为服从2000为均值，300为标准差的正态分布
 
-    r = 20000
-
-    r_h = 5000
-    # 飞行高度0.5~15Km
+    # 飞行高度8~12Km
     a_x = np.random.uniform(-10000, 10000)
     a_y = np.random.uniform(-10000, 10000)
-    a_z = np.random.uniform(550, 15000)
+    a_z = np.random.uniform(8000, 12000)
 
     # print(a_x, a_y, a_z)
 
@@ -36,33 +27,22 @@ def init_env(num_missiles=3, StepNum=1000, interceptor_num=8):
     # aHeading = np.random.uniform(0, 2)
     aHeading = aHeading * m.pi
 
-    # 以a_x, a_y, a_z为球心, 均匀生成导弹位置
-    xi, yi, zi = sample_spherical(num_missiles)  # 单位球上取点
-
-    zi = zi
-    # for i in range(len(xi)):
-    #     if zi[i] < 0:
-    #         zi[i] = 0
-
-    # print(xi, yi, zi)
-    # 扩张半径与平移坐标
-
-    xi_r = xi * r + a_x
-    yi_r = yi * r + a_y
-    # 导弹的发射高度不能为负数
-    zi_r = zi * r_h + a_z  # 导弹的竖直高度不能太高，在飞机的10km范围内
-    for i in range(len(zi_r)):
-        if zi_r[i] < 0:
-            zi_r[i] = 0
+    # 在水平椭圆区域内生成导弹位置
+    angles = np.random.uniform(0, 2 * m.pi, size=num_missiles)
+    radial_scale = np.random.uniform(0.85, 1.15, size=num_missiles)
+    major_axis = 20000.0
+    minor_axis = 15000.0
+    missile_x = a_x + major_axis * radial_scale * np.cos(angles)
+    missile_y = a_y + minor_axis * radial_scale * np.sin(angles)
+    altitude_offsets = np.random.uniform(-3000.0, 3000.0, size=num_missiles)
+    missile_z = np.clip(a_z + altitude_offsets, 0.0, None)
     mposList = []
     mHeadingList = []
     mPitchList = []
-    for i in range(len(xi_r)):
-        mposList.append([xi_r[i], zi_r[i], yi_r[i]])
-        # mHeadingList.append(ComputeHeading([a_x, a_y, a_z], [xi_r[i], yi_r[i], zi_r[i]]))
-        # mPitchList.append(ComputePitch([a_x, a_y, a_z], [xi_r[i], yi_r[i], zi_r[i]]))
-        mHeadingList.append(ComputeHeading([a_x, a_z, a_y], [xi_r[i], zi_r[i], yi_r[i]]))
-        mPitchList.append(ComputePitch([a_x, a_z, a_y], [xi_r[i], zi_r[i], yi_r[i]]))
+    for i in range(len(missile_x)):
+        mposList.append([missile_x[i], missile_z[i], missile_y[i]])
+        mHeadingList.append(ComputeHeading([a_x, a_z, a_y], [missile_x[i], missile_z[i], missile_y[i]]))
+        mPitchList.append(ComputePitch([a_x, a_z, a_y], [missile_x[i], missile_z[i], missile_y[i]]))
     # print(mposList)
 
     # 导弹速度不低于2马赫

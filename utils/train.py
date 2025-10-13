@@ -154,12 +154,12 @@ def main():
 
     parser = argparse.ArgumentParser(description='612DD')
 
-    parser.add_argument('--memory_size', type=int, default=40000, help='Size of replay memory')
-    parser.add_argument('--memory_warmup_size', type=int, default=2000, help='Warmup size of replay memory')
-    parser.add_argument('--learn_freq', type=int, default=50, help='Frequency of learning')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for training')
-    parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
+    parser.add_argument('--memory_size', type=int, default=60000, help='Size of replay memory')
+    parser.add_argument('--memory_warmup_size', type=int, default=4000, help='Warmup size of replay memory')
+    parser.add_argument('--learn_freq', type=int, default=20, help='Frequency of learning')
+    parser.add_argument('--batch_size', type=int, default=384, help='Batch size for training')
+    parser.add_argument('--learning_rate', type=float, default=5e-4, help='Learning rate for training')
+    parser.add_argument('--gamma', type=float, default=0.993, help='Discount factor')
     parser.add_argument('--max_episode', type=int, default=1000, help='Maximum number of episodes')
     parser.add_argument(
         '--validation_episodes',
@@ -180,7 +180,7 @@ def main():
     start = time.time()
 
     num_missiles = 3
-    step_num = 3000
+    step_num = 3500
     Env, aircraft, missiles = init_env(
         num_missiles=num_missiles,
         StepNum=step_num,
@@ -197,7 +197,7 @@ def main():
     # 生成智能体
     model = Double_DQN(state_size=state_size, action_size=action_size)
 
-    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.9, e_greed_decrement=1e-6)
+    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.85, e_greed_decrement=5e-7)
 
     max_episode = 2000
 
