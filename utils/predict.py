@@ -33,9 +33,9 @@ def calTreatFromState(apos, mpos, v_a, v_m):
     return CalTreat(apos, mpos, v_a, v_m)
 
 
-LEARNING_RATE = 0.0005
+LEARNING_RATE = 0.0007
 MAXSTEP = 2000
-GAMMA = 0.99
+GAMMA = 0.97
 DEFAULT_NUM_MISSILES = 3
 DEFAULT_INTERCEPTOR_NUM = 8
 
@@ -66,7 +66,15 @@ def predictResult(model_path):
 
     model.load_state_dict(new_state)
 
-    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.1, e_greed_decrement=1e-6)
+    agent = MyDQNAgent(
+        model,
+        action_size,
+        gamma=GAMMA,
+        lr=LEARNING_RATE,
+        e_greed=0.1,
+        e_greed_decrement=1e-6,
+        target_sync_interval=10,
+    )
 
     state = np.zeros((MAXSTEP + 1, state_size), dtype=np.float32)
     obs_rows = Env._get_obs().shape[0]

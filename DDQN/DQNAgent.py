@@ -19,11 +19,20 @@ def soft_update(target, source, tau=0):
 
 class MyDQNAgent:
 
-    def __init__(self, model, action_size, gamma=None, lr=None, e_greed=0.1, e_greed_decrement=0):
+    def __init__(
+        self,
+        model,
+        action_size,
+        gamma=None,
+        lr=None,
+        e_greed=0.1,
+        e_greed_decrement=0,
+        target_sync_interval: int = 10,
+    ):
 
         self.action_size = action_size
         self.global_step = 0
-        self.update_target_steps = 20  # 每20个时间步更新一次目标网络的参数
+        self.update_target_steps = max(1, target_sync_interval)  # 每target_sync_interval个时间步更新一次目标网络的参数
         self.e_greed = e_greed  # ϵ-greedy中的ϵ
         self.e_greed_decrement = e_greed_decrement  # ϵ的动态更新因子
         self.model = model.to(device)

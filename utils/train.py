@@ -155,11 +155,11 @@ def main():
     parser = argparse.ArgumentParser(description='612DD')
 
     parser.add_argument('--memory_size', type=int, default=40000, help='Size of replay memory')
-    parser.add_argument('--memory_warmup_size', type=int, default=2000, help='Warmup size of replay memory')
-    parser.add_argument('--learn_freq', type=int, default=50, help='Frequency of learning')
+    parser.add_argument('--memory_warmup_size', type=int, default=4000, help='Warmup size of replay memory')
+    parser.add_argument('--learn_freq', type=int, default=25, help='Frequency of learning')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for training')
-    parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
+    parser.add_argument('--learning_rate', type=float, default=0.0007, help='Learning rate for training')
+    parser.add_argument('--gamma', type=float, default=0.97, help='Discount factor')
     parser.add_argument('--max_episode', type=int, default=1000, help='Maximum number of episodes')
     parser.add_argument(
         '--validation_episodes',
@@ -167,6 +167,7 @@ def main():
         default=EvaluationConfig.episodes,
         help='Number of validation episodes to run after each checkpoint save',
     )
+    parser.add_argument('--target_sync_interval', type=int, default=10, help='Target network sync interval in steps')
 
     args = parser.parse_args()
 
@@ -197,7 +198,15 @@ def main():
     # 生成智能体
     model = Double_DQN(state_size=state_size, action_size=action_size)
 
-    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.9, e_greed_decrement=1e-6)
+    agent = MyDQNAgent(
+        model,
+        action_size,
+        gamma=GAMMA,
+        lr=LEARNING_RATE,
+        e_greed=0.9,
+        e_greed_decrement=1e-6,
+        target_sync_interval=args.target_sync_interval,
+    )
 
     max_episode = 2000
 
