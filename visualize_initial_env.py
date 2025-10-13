@@ -25,13 +25,32 @@ def collect_trajectories(
     for idx, missile in enumerate(missiles):
         missile_positions[idx, 0] = [missile.X, missile.Y, missile.Z]
 
+    impact_radius = 50.0
+    active_mask = np.ones(len(missiles), dtype=bool)
+
     for step in range(1, steps + 1):
-        target_state = [aircraft.X, aircraft.Y, aircraft.Z]
+        target_state = np.array([aircraft.X, aircraft.Y, aircraft.Z], dtype=float)
         for idx, missile in enumerate(missiles):
-            missile_positions[idx, step] = missile.MissilePosition(
-                target_state, aircraft.V, aircraft.Pitch, aircraft.Heading
+            if not active_mask[idx]:
+                missile_positions[idx, step] = missile_positions[idx, step - 1]
+                continue
+
+            updated_pos = np.array(
+                missile.MissilePosition(
+                    target_state.tolist(), aircraft.V, aircraft.Pitch, aircraft.Heading
+                ),
+                dtype=float,
             )
+            missile_positions[idx, step] = updated_pos
+
+            if np.linalg.norm(updated_pos - target_state) <= impact_radius:
+                active_mask[idx] = False
         plane_positions[step] = aircraft.AircraftPostition()
+
+        if not active_mask.any():
+            plane_positions[step + 1 :] = plane_positions[step]
+            missile_positions[:, step + 1 :, :] = missile_positions[:, step : step + 1, :]
+            break
 
     return plane_positions, missile_positions
 

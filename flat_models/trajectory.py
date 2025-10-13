@@ -108,26 +108,22 @@ class Missiles:
             self.next_decay_time = self.accel_duration + 1.0
 
         if prev_time < self.accel_duration:
-            ratio = min(self.time, self.accel_duration) / self.accel_duration
-            self.V = self.initial_speed + (self.target_speed - self.initial_speed) * ratio
-            self.X = self.X + self.V * m.cos(self.Pitch) * m.cos(self.Heading) * dt
-            self.Y = self.Y + self.V * m.sin(self.Pitch) * dt
-            self.Z = self.Z - self.V * m.cos(self.Pitch) * m.sin(self.Heading) * dt
-            if self.time >= self.accel_duration:
-                self.V = self.target_speed
-            return [self.X, self.Y, self.Z]
-
-        if self.time >= self.next_decay_time:
-            self.V *= 0.99
-            self.last_decay_second = int(self.time)
-            self.next_decay_time += 1.0
+            ratio_curr = min(self.time, self.accel_duration) / self.accel_duration
+            speed_curr = self.initial_speed + (self.target_speed - self.initial_speed) * ratio_curr
+            self.V = speed_curr
+            V_m = speed_curr
+        else:
+            if self.time >= self.next_decay_time:
+                self.V *= 0.99
+                self.last_decay_second = int(self.time)
+                self.next_decay_time += 1.0
+            V_m = self.V
 
         # 目标实时位置
         X_m = self.X
         Y_m = self.Y
         Z_m = self.Z
 
-        V_m = self.V
         Heading_m = self.Heading
         Pitch_m = self.Pitch
         g = self.g
@@ -610,26 +606,23 @@ class Interceptor:
             self.next_decay_time = self.accel_duration + 1.0
 
         if prev_time < self.accel_duration:
-            ratio = min(self.time, self.accel_duration) / self.accel_duration
-            self.V_i = self.initial_speed + (self.target_speed - self.initial_speed) * ratio
-            self.X_i = self.X_i + self.V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i) * dt
-            self.Y_i = self.Y_i + self.V_i * m.sin(self.Pitch_i) * dt
-            self.Z_i = self.Z_i - self.V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i) * dt
-            if self.time >= self.accel_duration:
-                self.V_i = self.target_speed
-            return [self.X_i, self.Y_i, self.Z_i]
-
-        if self.time >= self.next_decay_time:
-            self.V_i *= 0.99
-            self.last_decay_second = int(self.time)
-            self.next_decay_time += 1.0
+            ratio_curr = min(self.time, self.accel_duration) / self.accel_duration
+            speed_curr = self.initial_speed + (self.target_speed - self.initial_speed) * ratio_curr
+            self.V_i = speed_curr
+            V_i = speed_curr
+        else:
+            if self.time >= self.next_decay_time:
+                self.V_i *= 0.99
+                self.last_decay_second = int(self.time)
+                self.next_decay_time += 1.0
+            V_i = self.V_i
 
         # 目标实时位置
         X_m, Y_m, Z_m = missile_plist
 
-        dX_i = self.V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i)
-        dY_i = self.V_i * m.sin(self.Pitch_i)
-        dZ_i = - self.V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i)
+        dX_i = V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i)
+        dY_i = V_i * m.sin(self.Pitch_i)
+        dZ_i = - V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i)
 
         dX_m = V_m * m.cos(Pitch_m) * m.cos(Heading_m)
         dY_m = V_m * m.sin(Pitch_m)
@@ -654,9 +647,9 @@ class Interceptor:
         dHeading_i = - self.mg / (self.V_i * m.cos(self.Pitch_i)) * nz
         self.Heading_i = self.Heading_i + dHeading_i * self.dt
 
-        self.X_i = self.X_i + self.V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i) * self.dt
-        self.Y_i = self.Y_i + self.V_i * m.sin(self.Pitch_i) * self.dt
-        self.Z_i = self.Z_i - self.V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i) * self.dt
+        self.X_i = self.X_i + V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i) * self.dt
+        self.Y_i = self.Y_i + V_i * m.sin(self.Pitch_i) * self.dt
+        self.Z_i = self.Z_i - V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i) * self.dt
 
         # 将偏转角稳定在【-pi, pi】上
         if self.Heading_i > m.pi:
