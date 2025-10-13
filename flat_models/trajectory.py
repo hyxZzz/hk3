@@ -64,6 +64,12 @@ class Missiles:
         self.g = g  # 重力加速度
         self.dt = dt  # 时间精度
         self.k1, self.k2 = k1, k2  # 比例系数
+        self.initial_speed = V
+        self.target_speed = 1200.0
+        self.accel_duration = 5.0
+        self.time = 0.0
+        self.last_decay_second = 0
+        self.next_decay_time = self.accel_duration + 1.0
 
     """导弹位置计算函数，除了导弹自身的系数，还需传入目标的实时位置、速度，角度等信息。为导弹类的成员函数
 
@@ -92,34 +98,50 @@ class Missiles:
     """
 
     def MissilePosition(self, aircraft_plist: list, V_t, theta_t, fea_t):
+        dt = self.dt
+        prev_time = self.time
+        self.time += dt
+
+        if prev_time == 0:
+            self.initial_speed = self.V
+            self.last_decay_second = 0
+            self.next_decay_time = self.accel_duration + 1.0
+
+        if prev_time < self.accel_duration:
+            ratio_curr = min(self.time, self.accel_duration) / self.accel_duration
+            speed_curr = self.initial_speed + (self.target_speed - self.initial_speed) * ratio_curr
+            self.V = speed_curr
+            V_m = speed_curr
+        else:
+            if self.time >= self.next_decay_time:
+                self.V *= 0.99
+                self.last_decay_second = int(self.time)
+                self.next_decay_time += 1.0
+            V_m = self.V
+
         # 目标实时位置
         X_m = self.X
         Y_m = self.Y
         Z_m = self.Z
 
-        V_m = self.V
         Heading_m = self.Heading
         Pitch_m = self.Pitch
         g = self.g
         k1 = self.k1
         k2 = self.k2
-        dt = self.dt
 
         X_t, Y_t, Z_t = aircraft_plist
 
         dX_m = V_m * m.cos(Pitch_m) * m.cos(Heading_m)
-        dY_m = V_m * m.sin(Pitch_m)  # V_m * m.cos(Pitch_m) * m.cos(Heading_m)
-        dZ_m = - V_m * m.cos(Pitch_m) * m.sin(
-            Heading_m)  # dZ_m = - V_m * m.cos(Pitch_m) * m.sin(Heading_m)
+        dY_m = V_m * m.sin(Pitch_m)
+        dZ_m = - V_m * m.cos(Pitch_m) * m.sin(Heading_m)
 
         dX_t = V_t * m.cos(theta_t) * m.cos(fea_t)
-        dY_t = V_t * m.sin(theta_t)  # V_t * m.cos(theta_t) * m.cos(fea_t)
-        dZ_t = - V_t * m.cos(theta_t) * m.sin(fea_t)  # dZ_t = - V_t * m.cos(theta_t) * m.sin(fea_t)
+        dY_t = V_t * m.sin(theta_t)
+        dZ_t = - V_t * m.cos(theta_t) * m.sin(fea_t)
         dist = m.sqrt(
-            (X_m - X_t) * (X_m - X_t) + (Y_m - Y_t) * (Y_m - Y_t) + (Z_m - Z_t) * (
-                    Z_m - Z_t))
-        dR = ((Y_m - Y_t) * (dY_m - dY_t) + (Z_m - Z_t) * (dZ_m - dZ_t) + (X_m - X_t) * (
-                dX_m - dX_t)) / dist
+            (X_m - X_t) * (X_m - X_t) + (Y_m - Y_t) * (Y_m - Y_t) + (Z_m - Z_t) * (Z_m - Z_t))
+        dR = ((Y_m - Y_t) * (dY_m - dY_t) + (Z_m - Z_t) * (dZ_m - dZ_t) + (X_m - X_t) * (dX_m - dX_t)) / dist
 
         dtheta_L = ((dY_t - dY_m) * m.sqrt((X_t - X_m) ** 2 + (Z_t - Z_m) ** 2) - (Y_t - Y_m) * (
                 (X_t - X_m) * (dX_t - dX_m) + (Z_t - Z_m) * (dZ_t - dZ_m)) / m.sqrt(
@@ -540,6 +562,12 @@ class Interceptor:
         self.mg = mg  # 重力加速度
         self.dt = dt  # 时间精度
         self.k1, self.k2 = k1, k2  # 比例系数
+        self.initial_speed = v_i
+        self.target_speed = 1000.0
+        self.accel_duration = 5.0
+        self.time = 0.0
+        self.last_decay_second = 0
+        self.next_decay_time = self.accel_duration + 1.0
 
     """拦截弹位置计算函数，除了拦截弹自身的系数，还需传入来袭导弹的实时位置、速度，角度等信息。为拦截弹类的成员函数
 
@@ -568,17 +596,37 @@ class Interceptor:
     """
 
     def InterceptorPosition(self, missile_plist: list, V_m, Pitch_m, Heading_m):
+        dt = self.dt
+        prev_time = self.time
+        self.time += dt
+
+        if prev_time == 0:
+            self.initial_speed = self.V_i
+            self.last_decay_second = 0
+            self.next_decay_time = self.accel_duration + 1.0
+
+        if prev_time < self.accel_duration:
+            ratio_curr = min(self.time, self.accel_duration) / self.accel_duration
+            speed_curr = self.initial_speed + (self.target_speed - self.initial_speed) * ratio_curr
+            self.V_i = speed_curr
+            V_i = speed_curr
+        else:
+            if self.time >= self.next_decay_time:
+                self.V_i *= 0.99
+                self.last_decay_second = int(self.time)
+                self.next_decay_time += 1.0
+            V_i = self.V_i
+
         # 目标实时位置
         X_m, Y_m, Z_m = missile_plist
 
-        dX_i = self.V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i)
-        dY_i = self.V_i * m.sin(self.Pitch_i)  # self.V_m * m.cos(self.Pitch_m) * m.cos(self.Heading_m)
-        dZ_i = - self.V_i * m.cos(self.Pitch_i) * m.sin(
-            self.Heading_i)  # dZ_m = - self.V_m * m.cos(self.Pitch_m) * m.sin(self.Heading_m)
+        dX_i = V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i)
+        dY_i = V_i * m.sin(self.Pitch_i)
+        dZ_i = - V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i)
 
         dX_m = V_m * m.cos(Pitch_m) * m.cos(Heading_m)
-        dY_m = V_m * m.sin(Pitch_m)  # V_t * m.cos(Pitch_t) * m.cos(Heading_t)
-        dZ_m = - V_m * m.cos(Pitch_m) * m.sin(Heading_m)  # dZ_t = - V_t * m.cos(Pitch_t) * m.sin(Heading_t)
+        dY_m = V_m * m.sin(Pitch_m)
+        dZ_m = - V_m * m.cos(Pitch_m) * m.sin(Heading_m)
         dist = m.sqrt(
             (self.X_i - X_m) * (self.X_i - X_m) + (self.Y_i - Y_m) * (self.Y_i - Y_m) + (self.Z_i - Z_m) * (
                     self.Z_i - Z_m))
@@ -599,9 +647,9 @@ class Interceptor:
         dHeading_i = - self.mg / (self.V_i * m.cos(self.Pitch_i)) * nz
         self.Heading_i = self.Heading_i + dHeading_i * self.dt
 
-        self.X_i = self.X_i + self.V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i) * self.dt
-        self.Y_i = self.Y_i + self.V_i * m.sin(self.Pitch_i) * self.dt
-        self.Z_i = self.Z_i - self.V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i) * self.dt
+        self.X_i = self.X_i + V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i) * self.dt
+        self.Y_i = self.Y_i + V_i * m.sin(self.Pitch_i) * self.dt
+        self.Z_i = self.Z_i - V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i) * self.dt
 
         # 将偏转角稳定在【-pi, pi】上
         if self.Heading_i > m.pi:
