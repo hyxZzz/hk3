@@ -68,7 +68,8 @@ class Missiles:
         self.target_speed = 1200.0
         self.accel_duration = 5.0
         self.time = 0.0
-        self.last_decay_second = -1
+        self.last_decay_second = 0
+        self.next_decay_time = self.accel_duration + 1.0
 
     """导弹位置计算函数，除了导弹自身的系数，还需传入目标的实时位置、速度，角度等信息。为导弹类的成员函数
 
@@ -102,7 +103,9 @@ class Missiles:
         self.time += dt
 
         if prev_time == 0:
-            self.last_decay_second = -1
+            self.initial_speed = self.V
+            self.last_decay_second = 0
+            self.next_decay_time = self.accel_duration + 1.0
 
         if prev_time < self.accel_duration:
             ratio = min(self.time, self.accel_duration) / self.accel_duration
@@ -114,10 +117,10 @@ class Missiles:
                 self.V = self.target_speed
             return [self.X, self.Y, self.Z]
 
-        current_second = int(self.time)
-        if current_second > self.last_decay_second:
+        if self.time >= self.next_decay_time:
             self.V *= 0.99
-            self.last_decay_second = current_second
+            self.last_decay_second = int(self.time)
+            self.next_decay_time += 1.0
 
         # 目标实时位置
         X_m = self.X
@@ -567,7 +570,8 @@ class Interceptor:
         self.target_speed = 1000.0
         self.accel_duration = 5.0
         self.time = 0.0
-        self.last_decay_second = -1
+        self.last_decay_second = 0
+        self.next_decay_time = self.accel_duration + 1.0
 
     """拦截弹位置计算函数，除了拦截弹自身的系数，还需传入来袭导弹的实时位置、速度，角度等信息。为拦截弹类的成员函数
 
@@ -602,7 +606,8 @@ class Interceptor:
 
         if prev_time == 0:
             self.initial_speed = self.V_i
-            self.last_decay_second = -1
+            self.last_decay_second = 0
+            self.next_decay_time = self.accel_duration + 1.0
 
         if prev_time < self.accel_duration:
             ratio = min(self.time, self.accel_duration) / self.accel_duration
@@ -614,10 +619,10 @@ class Interceptor:
                 self.V_i = self.target_speed
             return [self.X_i, self.Y_i, self.Z_i]
 
-        current_second = int(self.time)
-        if current_second > self.last_decay_second:
+        if self.time >= self.next_decay_time:
             self.V_i *= 0.99
-            self.last_decay_second = current_second
+            self.last_decay_second = int(self.time)
+            self.next_decay_time += 1.0
 
         # 目标实时位置
         X_m, Y_m, Z_m = missile_plist
