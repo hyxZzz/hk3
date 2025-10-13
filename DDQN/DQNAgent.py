@@ -23,7 +23,7 @@ class MyDQNAgent:
 
         self.action_size = action_size
         self.global_step = 0
-        self.update_target_steps = 20  # 每20个时间步更新一次目标网络的参数
+        self.update_target_steps = 15  # 更频繁地更新目标网络的参数以适应新的动力学
         self.e_greed = e_greed  # ϵ-greedy中的ϵ
         self.e_greed_decrement = e_greed_decrement  # ϵ的动态更新因子
         self.model = model.to(device)
