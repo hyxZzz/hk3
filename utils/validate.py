@@ -30,8 +30,8 @@ class EvaluationConfig:
     episodes: int = 100
     num_missiles: int = 3
     step_num: int = 3000
-    gamma: float = 0.97
-    learning_rate: float = 0.0007
+    gamma: float = 0.99
+    learning_rate: float = 0.001
 
 
 EPISODE_PATTERN = re.compile(r"DDQN_episode(\d+)\.pth$")
@@ -79,7 +79,6 @@ def build_agent(state_size: int, action_size: int, config: EvaluationConfig) -> 
         lr=config.learning_rate,
         e_greed=0.0,
         e_greed_decrement=0.0,
-        target_sync_interval=10,
     )
     agent.model.eval()
     agent.target_model.eval()

@@ -53,21 +53,7 @@ MinV = 170
 
 
 class Missiles:
-    def __init__(
-        self,
-        missile_plist: list,
-        V,
-        Pitch,
-        Heading,
-        dt=0.01,
-        g=9.6,
-        k1=7,
-        k2=7,
-        target_speed: float = 1200.0,
-        accel_duration: float = 5.0,
-        decay_interval: float = 1.0,
-        decay_factor: float = 0.99,
-    ):
+    def __init__(self, missile_plist: list, V, Pitch, Heading, dt=0.01, g=9.6, k1=7, k2=7):
         self.X, self.Y, self.Z = missile_plist  # 导弹发射时位于的坐标
         self.V = V  # 导弹发射初速度
         self.Pitch, self.Heading = Pitch, Heading  # 导弹发射的初始俯仰角和偏航角
@@ -78,14 +64,6 @@ class Missiles:
         self.g = g  # 重力加速度
         self.dt = dt  # 时间精度
         self.k1, self.k2 = k1, k2  # 比例系数
-        self._init_speed = V
-        self.target_speed = target_speed
-        self.accel_duration = accel_duration
-        self._decay_interval = decay_interval
-        self._decay_factor = decay_factor
-        self._flight_time = 0.0
-        self._last_decay_time = 0.0
-        self._in_guidance = False
 
     """导弹位置计算函数，除了导弹自身的系数，还需传入目标的实时位置、速度，角度等信息。为导弹类的成员函数
 
@@ -128,33 +106,6 @@ class Missiles:
         dt = self.dt
 
         X_t, Y_t, Z_t = aircraft_plist
-
-        # 推进飞行时间并判断是否进入PN制导阶段
-        self._flight_time += dt
-        if not self._in_guidance and self._flight_time >= self.accel_duration:
-            self._in_guidance = True
-            self._last_decay_time = self._flight_time
-
-        # 加速段：速度线性增长，保持原始姿态飞行
-        if not self._in_guidance:
-            accel_ratio = min(1.0, self._flight_time / max(self.accel_duration, 1e-6))
-            V_m = self._init_speed + (self.target_speed - self._init_speed) * accel_ratio
-            self.V = V_m
-            X_m = X_m + V_m * m.cos(Pitch_m) * m.cos(Heading_m) * dt
-            Y_m = Y_m + V_m * m.sin(Pitch_m) * dt
-            Z_m = Z_m - V_m * m.cos(Pitch_m) * m.sin(Heading_m) * dt
-            self.X = X_m
-            self.Y = Y_m
-            self.Z = Z_m
-            return [X_m, Y_m, Z_m]
-
-        # PN制导段速度衰减
-        while self._flight_time - self._last_decay_time >= self._decay_interval:
-            V_m = max(50.0, self.V * self._decay_factor)
-            self._last_decay_time += self._decay_interval
-            self.V = V_m
-
-        V_m = self.V
 
         dX_m = V_m * m.cos(Pitch_m) * m.cos(Heading_m)
         dY_m = V_m * m.sin(Pitch_m)  # V_m * m.cos(Pitch_m) * m.cos(Heading_m)
@@ -577,21 +528,7 @@ class Aircraft:
 
 
 class Interceptor:
-    def __init__(
-        self,
-        interceptor_plist: list,
-        v_i,
-        Pitch_i,
-        Heading_i,
-        dt=0.01,
-        mg=9.6,
-        k1=6.5,
-        k2=6.5,
-        target_speed: float = 1000.0,
-        accel_duration: float = 5.0,
-        decay_interval: float = 1.0,
-        decay_factor: float = 0.99,
-    ):
+    def __init__(self, interceptor_plist: list, v_i, Pitch_i, Heading_i, dt=0.01, mg=9.6, k1=6.5, k2=6.5):
         self.X_i, self.Y_i, self.Z_i = interceptor_plist  # 拦截弹发射时位于的坐标
         self.V_i = v_i  # 拦截弹发射初速度
         self.Pitch_i, self.Heading_i = Pitch_i, Heading_i  # 拦截弹发射的初始俯仰角和偏航角
@@ -603,14 +540,6 @@ class Interceptor:
         self.mg = mg  # 重力加速度
         self.dt = dt  # 时间精度
         self.k1, self.k2 = k1, k2  # 比例系数
-        self._init_speed = v_i
-        self.target_speed = target_speed
-        self.accel_duration = accel_duration
-        self._decay_interval = decay_interval
-        self._decay_factor = decay_factor
-        self._flight_time = 0.0
-        self._last_decay_time = 0.0
-        self._in_guidance = False
 
     """拦截弹位置计算函数，除了拦截弹自身的系数，还需传入来袭导弹的实时位置、速度，角度等信息。为拦截弹类的成员函数
 
@@ -638,19 +567,6 @@ class Interceptor:
         变更了位置X,Y,Z的Interceptor对象                        
     """
 
-    def _reset_motion(self, base_speed=None):
-        if base_speed is not None:
-            self._init_speed = base_speed
-            self.V_i = base_speed
-        self._flight_time = 0.0
-        self._last_decay_time = 0.0
-        self._in_guidance = False
-
-    def prepare_for_launch(self, base_speed, target_speed):
-        self._reset_motion(base_speed=base_speed)
-        self.target_speed = target_speed
-        self.attacking = 0
-
     def InterceptorPosition(self, missile_plist: list, V_m, Pitch_m, Heading_m):
         # 目标实时位置
         X_m, Y_m, Z_m = missile_plist
@@ -668,26 +584,6 @@ class Interceptor:
                     self.Z_i - Z_m))
         dR = ((self.Y_i - Y_m) * (dY_i - dY_m) + (self.Z_i - Z_m) * (dZ_i - dZ_m) + (self.X_i - X_m) * (
                 dX_i - dX_m)) / dist
-
-        # 更新飞行时间并判定是否进入PN制导
-        self._flight_time += self.dt
-        if not self._in_guidance and self._flight_time >= self.accel_duration:
-            self._in_guidance = True
-            self._last_decay_time = self._flight_time
-
-        # 加速段：保持姿态沿当前方向飞行
-        if not self._in_guidance:
-            accel_ratio = min(1.0, self._flight_time / max(self.accel_duration, 1e-6))
-            self.V_i = self._init_speed + (self.target_speed - self._init_speed) * accel_ratio
-            self.X_i = self.X_i + self.V_i * m.cos(self.Pitch_i) * m.cos(self.Heading_i) * self.dt
-            self.Y_i = self.Y_i + self.V_i * m.sin(self.Pitch_i) * self.dt
-            self.Z_i = self.Z_i - self.V_i * m.cos(self.Pitch_i) * m.sin(self.Heading_i) * self.dt
-            return [self.X_i, self.Y_i, self.Z_i]
-
-        # PN制导段速度衰减
-        while self._flight_time - self._last_decay_time >= self._decay_interval:
-            self.V_i = max(50.0, self.V_i * self._decay_factor)
-            self._last_decay_time += self._decay_interval
 
         dPitch_L = ((dY_m - dY_i) * m.sqrt((X_m - self.X_i) ** 2 + (Z_m - self.Z_i) ** 2) - (Y_m - self.Y_i) * (
                 (X_m - self.X_i) * (dX_m - dX_i) + (Z_m - self.Z_i) * (dZ_m - dZ_i)) / m.sqrt(
