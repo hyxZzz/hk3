@@ -5,7 +5,7 @@ import copy
 
 from utils.common import ComputeHeading, CalAngle, CalSelfPosition, CalDistance
 from matplotlib import style
-from typing import List
+from typing import List, Optional
 
 
 MaxInterceptorDist = 10000   # 拦截弹最远距离
@@ -53,7 +53,21 @@ MinV = 170
 
 
 class Missiles:
-    def __init__(self, missile_plist: list, V, Pitch, Heading, dt=0.01, g=9.6, k1=7, k2=7):
+    def __init__(
+        self,
+        missile_plist: list,
+        V,
+        Pitch,
+        Heading,
+        dt=0.01,
+        g=9.6,
+        k1=7,
+        k2=7,
+        target_speed: float = 1200.0,
+        boost_duration: float = 5.0,
+        speed_decay_interval: float = 1.0,
+        speed_decay_factor: float = 0.99,
+    ):
         self.X, self.Y, self.Z = missile_plist  # 导弹发射时位于的坐标
         self.V = V  # 导弹发射初速度
         self.Pitch, self.Heading = Pitch, Heading  # 导弹发射的初始俯仰角和偏航角
@@ -64,6 +78,32 @@ class Missiles:
         self.g = g  # 重力加速度
         self.dt = dt  # 时间精度
         self.k1, self.k2 = k1, k2  # 比例系数
+
+        # 两段运动参数
+        self.target_speed = target_speed
+        self.boost_duration = boost_duration
+        self.speed_decay_interval = speed_decay_interval
+        self.speed_decay_factor = speed_decay_factor
+        self.initial_speed = V
+        self.time = 0.0
+        self._last_decay_time = boost_duration
+
+    def _advance_time(self):
+        next_time = self.time + self.dt
+        if next_time <= self.boost_duration:
+            progress = next_time / self.boost_duration
+            self.V = self.initial_speed + (self.target_speed - self.initial_speed) * progress
+            self._last_decay_time = self.boost_duration
+        else:
+            if self.time < self.boost_duration:
+                self.V = self.target_speed
+            elapsed_since_decay = next_time - self._last_decay_time
+            if elapsed_since_decay >= self.speed_decay_interval:
+                decay_steps = int(elapsed_since_decay / self.speed_decay_interval)
+                self.V *= self.speed_decay_factor ** decay_steps
+                self._last_decay_time += self.speed_decay_interval * decay_steps
+        self.time = next_time
+        self.V = max(self.V, 200.0)
 
     """导弹位置计算函数，除了导弹自身的系数，还需传入目标的实时位置、速度，角度等信息。为导弹类的成员函数
 
@@ -92,6 +132,7 @@ class Missiles:
     """
 
     def MissilePosition(self, aircraft_plist: list, V_t, theta_t, fea_t):
+        self._advance_time()
         # 目标实时位置
         X_m = self.X
         Y_m = self.Y
@@ -528,7 +569,21 @@ class Aircraft:
 
 
 class Interceptor:
-    def __init__(self, interceptor_plist: list, v_i, Pitch_i, Heading_i, dt=0.01, mg=9.6, k1=6.5, k2=6.5):
+    def __init__(
+        self,
+        interceptor_plist: list,
+        v_i,
+        Pitch_i,
+        Heading_i,
+        dt=0.01,
+        mg=9.6,
+        k1=6.5,
+        k2=6.5,
+        target_speed: float = 1000.0,
+        boost_duration: float = 5.0,
+        speed_decay_interval: float = 1.0,
+        speed_decay_factor: float = 0.99,
+    ):
         self.X_i, self.Y_i, self.Z_i = interceptor_plist  # 拦截弹发射时位于的坐标
         self.V_i = v_i  # 拦截弹发射初速度
         self.Pitch_i, self.Heading_i = Pitch_i, Heading_i  # 拦截弹发射的初始俯仰角和偏航角
@@ -540,6 +595,52 @@ class Interceptor:
         self.mg = mg  # 重力加速度
         self.dt = dt  # 时间精度
         self.k1, self.k2 = k1, k2  # 比例系数
+
+        # 两段运动参数
+        self.target_speed = target_speed
+        self.boost_duration = boost_duration
+        self.speed_decay_interval = speed_decay_interval
+        self.speed_decay_factor = speed_decay_factor
+        self.initial_speed = v_i
+        self.time = 0.0
+        self._last_decay_time = boost_duration
+
+    def reset_dynamics(self, launch_speed: Optional[float] = None):
+        if launch_speed is not None:
+            self.initial_speed = launch_speed
+        self.V_i = self.initial_speed
+        self.time = 0.0
+        self._last_decay_time = self.boost_duration
+
+    def begin_pursuit(self, target_index: int, launch_speed: float):
+        self.T_i = target_index
+        self.attacking = 0
+        self.reset_dynamics(launch_speed)
+
+    def sync_with_aircraft(self, position, pitch, heading, speed):
+        self.X_i, self.Y_i, self.Z_i = position
+        self.Pitch_i = pitch
+        self.Heading_i = heading
+        if self.attacking == -1:
+            self.initial_speed = speed
+            self.V_i = speed
+
+    def _advance_time(self):
+        next_time = self.time + self.dt
+        if next_time <= self.boost_duration:
+            progress = next_time / self.boost_duration
+            self.V_i = self.initial_speed + (self.target_speed - self.initial_speed) * progress
+            self._last_decay_time = self.boost_duration
+        else:
+            if self.time < self.boost_duration:
+                self.V_i = self.target_speed
+            elapsed_since_decay = next_time - self._last_decay_time
+            if elapsed_since_decay >= self.speed_decay_interval:
+                decay_steps = int(elapsed_since_decay / self.speed_decay_interval)
+                self.V_i *= self.speed_decay_factor ** decay_steps
+                self._last_decay_time += self.speed_decay_interval * decay_steps
+        self.time = next_time
+        self.V_i = max(self.V_i, 200.0)
 
     """拦截弹位置计算函数，除了拦截弹自身的系数，还需传入来袭导弹的实时位置、速度，角度等信息。为拦截弹类的成员函数
 
@@ -568,6 +669,7 @@ class Interceptor:
     """
 
     def InterceptorPosition(self, missile_plist: list, V_m, Pitch_m, Heading_m):
+        self._advance_time()
         # 目标实时位置
         X_m, Y_m, Z_m = missile_plist
 

@@ -33,9 +33,9 @@ def calTreatFromState(apos, mpos, v_a, v_m):
     return CalTreat(apos, mpos, v_a, v_m)
 
 
-LEARNING_RATE = 0.0005
-MAXSTEP = 2000
-GAMMA = 0.99
+LEARNING_RATE = 5e-4
+MAXSTEP = 3500
+GAMMA = 0.993
 DEFAULT_NUM_MISSILES = 3
 DEFAULT_INTERCEPTOR_NUM = 8
 
@@ -46,7 +46,7 @@ def predictResult(model_path):
     # 生成2个导弹的 随机的 环境
     Env, aircraft, missiles = init_env(
         num_missiles=DEFAULT_NUM_MISSILES,
-        StepNum=1200,
+        StepNum=3500,
         interceptor_num=DEFAULT_INTERCEPTOR_NUM,
     )
     num_missiles = Env.missileNum
@@ -66,7 +66,16 @@ def predictResult(model_path):
 
     model.load_state_dict(new_state)
 
-    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.1, e_greed_decrement=1e-6)
+    agent = MyDQNAgent(
+        model,
+        action_size,
+        gamma=GAMMA,
+        lr=LEARNING_RATE,
+        e_greed=0.1,
+        e_greed_min=0.1,
+        e_greed_decrement=0.0,
+        gradient_clip_norm=0.0,
+    )
 
     state = np.zeros((MAXSTEP + 1, state_size), dtype=np.float32)
     obs_rows = Env._get_obs().shape[0]
