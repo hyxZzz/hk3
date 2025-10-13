@@ -158,9 +158,14 @@ def main():
     parser.add_argument('--memory_warmup_size', type=int, default=4000, help='Warmup size of replay memory')
     parser.add_argument('--learn_freq', type=int, default=20, help='Frequency of learning')
     parser.add_argument('--batch_size', type=int, default=384, help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=5e-4, help='Learning rate for training')
+    parser.add_argument('--learning_rate', type=float, default=3e-4, help='Learning rate for training')
     parser.add_argument('--gamma', type=float, default=0.993, help='Discount factor')
     parser.add_argument('--max_episode', type=int, default=1000, help='Maximum number of episodes')
+    parser.add_argument('--target_update_interval', type=int, default=120, help='Target network update frequency (in gradient steps)')
+    parser.add_argument('--epsilon_start', type=float, default=0.95, help='Initial epsilon for exploration')
+    parser.add_argument('--epsilon_final', type=float, default=0.1, help='Minimum epsilon for exploration')
+    parser.add_argument('--epsilon_decay_steps', type=int, default=1500000, help='Number of environment steps to decay epsilon over')
+    parser.add_argument('--gradient_clip_norm', type=float, default=10.0, help='Gradient clipping norm (<=0 disables clipping)')
     parser.add_argument(
         '--validation_episodes',
         type=int,
@@ -176,6 +181,11 @@ def main():
     BATCH_SIZE = args.batch_size
     LEARNING_RATE = args.learning_rate
     GAMMA = args.gamma
+    epsilon_range = max(0.0, args.epsilon_start - args.epsilon_final)
+    if args.epsilon_decay_steps > 0:
+        epsilon_decrement = epsilon_range / args.epsilon_decay_steps
+    else:
+        epsilon_decrement = 0.0
 
     start = time.time()
 
@@ -197,7 +207,17 @@ def main():
     # 生成智能体
     model = Double_DQN(state_size=state_size, action_size=action_size)
 
-    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.85, e_greed_decrement=5e-7)
+    agent = MyDQNAgent(
+        model,
+        action_size,
+        gamma=GAMMA,
+        lr=LEARNING_RATE,
+        e_greed=args.epsilon_start,
+        e_greed_min=args.epsilon_final,
+        e_greed_decrement=epsilon_decrement,
+        update_target_steps=args.target_update_interval,
+        gradient_clip_norm=args.gradient_clip_norm,
+    )
 
     max_episode = 2000
 
@@ -207,6 +227,11 @@ def main():
         step_num=step_num,
         gamma=GAMMA,
         learning_rate=LEARNING_RATE,
+        epsilon_start=0.0,
+        epsilon_final=0.0,
+        epsilon_decay_steps=1,
+        target_update_interval=args.target_update_interval,
+        gradient_clip_norm=args.gradient_clip_norm,
     )
     val_writer, val_log_dir = create_validation_writer()
     validation_results = []

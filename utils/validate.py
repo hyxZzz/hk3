@@ -32,6 +32,11 @@ class EvaluationConfig:
     step_num: int = 3500
     gamma: float = 0.993
     learning_rate: float = 5e-4
+    epsilon_start: float = 0.0
+    epsilon_final: float = 0.0
+    epsilon_decay_steps: int = 1
+    target_update_interval: int = 80
+    gradient_clip_norm: float = 0.0
 
 
 EPISODE_PATTERN = re.compile(r"DDQN_episode(\d+)\.pth$")
@@ -77,8 +82,11 @@ def build_agent(state_size: int, action_size: int, config: EvaluationConfig) -> 
         action_size,
         gamma=config.gamma,
         lr=config.learning_rate,
-        e_greed=0.0,
+        e_greed=config.epsilon_start,
+        e_greed_min=config.epsilon_final,
         e_greed_decrement=0.0,
+        update_target_steps=config.target_update_interval,
+        gradient_clip_norm=config.gradient_clip_norm,
     )
     agent.model.eval()
     agent.target_model.eval()

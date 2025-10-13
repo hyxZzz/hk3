@@ -66,7 +66,16 @@ def predictResult(model_path):
 
     model.load_state_dict(new_state)
 
-    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.1, e_greed_decrement=1e-6)
+    agent = MyDQNAgent(
+        model,
+        action_size,
+        gamma=GAMMA,
+        lr=LEARNING_RATE,
+        e_greed=0.1,
+        e_greed_min=0.1,
+        e_greed_decrement=0.0,
+        gradient_clip_norm=0.0,
+    )
 
     state = np.zeros((MAXSTEP + 1, state_size), dtype=np.float32)
     obs_rows = Env._get_obs().shape[0]
