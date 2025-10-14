@@ -13,6 +13,9 @@ from Environment.reset_env import reset_para
 act_num = 29  # 机动动作的多少
 Gostep = 1  # 机动策略改变的频率
 
+INTERCEPT_SUCCESS_DISTANCE = 20.0  # 拦截弹与导弹的命中阈值
+MISSILE_HIT_DISTANCE = 20.0  # 来袭导弹命中飞机的阈值
+SPARSE_REWARD_SCALE = 0.75  # 稀疏奖励的尺度
 DANGER_DISTANCE = 3000 # 危险距离 用于奖励函数的非线性分段
 LanchGap = 70 # 发射间隔
 ERRACTIONSCALE = 2 # 惩罚加的系数 原先设为10
@@ -178,12 +181,12 @@ class ManeuverEnv:
                             [ix, iy, iz, self.interceptorList[j].Pitch_i, self.interceptorList[j].Heading_i, 0])
                         dist_im = m.sqrt((ix - mx) ** 2 + (iy - my) ** 2 + (iz - mz) ** 2)
                         # 拦截弹拦截成功
-                        if dist_im < 20:
+                        if dist_im < INTERCEPT_SUCCESS_DISTANCE:
                             self.missileList[i].attacking = False  # 拦截使来袭导弹失效
                             self.interceptorList[j].attacking = 1  # 拦截导弹牺牲
 
                 # 被i导弹打中
-                if dist < 50:
+                if dist < MISSILE_HIT_DISTANCE:
                     escapeFlag = 0  # 被导弹击中，未逃离
                     self.escapeFlag = escapeFlag
                     info = 'Hit on! Escape Fail!!'
@@ -273,12 +276,12 @@ class ManeuverEnv:
                             [ix, iy, iz, self.interceptorList[j].Pitch_i, self.interceptorList[j].Heading_i, 0])
                         dist_im = m.sqrt((ix - mx) ** 2 + (iy - my) ** 2 + (iz - mz) ** 2)
                         # 拦截弹拦截成功
-                        if dist_im < 20:
+                        if dist_im < INTERCEPT_SUCCESS_DISTANCE:
                             self.missileList[i].attacking = False  # 拦截使来袭导弹失效
                             self.interceptorList[j].attacking = 1  # 拦截导弹牺牲
 
                 # 被i导弹打中
-                if dist < 20:
+                if dist < MISSILE_HIT_DISTANCE:
                     escapeFlag = 0  # 被导弹击中，未逃离
                     self.escapeFlag = escapeFlag
                     info = 'Hit on! Escape Fail!!'
@@ -614,7 +617,7 @@ class ManeuverEnv:
 
     def SparseReward(self):
         rd = 0
-        C4 = 0.75
+        C4 = SPARSE_REWARD_SCALE
 
         # C4 = 100
         if self.escapeFlag == -1:
