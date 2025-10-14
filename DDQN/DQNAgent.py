@@ -4,8 +4,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from torch.nn.utils import clip_grad_norm_
-
 
 # Determine if CPU or GPU computation should be used
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -21,32 +19,19 @@ def soft_update(target, source, tau=0):
 
 class MyDQNAgent:
 
-    def __init__(
-        self,
-        model,
-        action_size,
-        gamma=None,
-        lr=None,
-        e_greed=0.1,
-        e_greed_min=0.1,
-        e_greed_decrement=0,
-        update_target_steps=80,
-        gradient_clip_norm=10.0,
-    ):
+    def __init__(self, model, action_size, gamma=None, lr=None, e_greed=0.1, e_greed_decrement=0):
 
         self.action_size = action_size
         self.global_step = 0
-        self.update_target_steps = max(1, update_target_steps)
+        self.update_target_steps = 15  # 更频繁地更新目标网络的参数以适应新的动力学
         self.e_greed = e_greed  # ϵ-greedy中的ϵ
-        self.e_greed_min = max(0.0, e_greed_min)
-        self.e_greed_decrement = max(0.0, e_greed_decrement)  # ϵ的动态更新因子
+        self.e_greed_decrement = e_greed_decrement  # ϵ的动态更新因子
         self.model = model.to(device)
         self.target_model = copy.deepcopy(model).to(device)
         self.gamma = gamma  # 回报折扣因子
         self.lr = lr
         self.mse_loss = nn.MSELoss(reduction='mean')
         self.optimizer = optim.Adam(lr=lr, params=self.model.parameters())
-        self.gradient_clip_norm = gradient_clip_norm
 
     # 使用行为策略生成动作
     def sample(self, state):
@@ -61,7 +46,7 @@ class MyDQNAgent:
                 act = self.predict(state)
 
         # 动态更改e_greed,但不小于0.1
-        self.e_greed = max(self.e_greed_min, self.e_greed - self.e_greed_decrement)
+        self.e_greed = max(0.1, self.e_greed - self.e_greed_decrement)
 
         return act
 
@@ -138,17 +123,19 @@ class MyDQNAgent:
         pred_value = torch.multiply(pred_values, action_onehot)
         pred_value = torch.sum(pred_value, dim=1, keepdim=True)
 
-        done_mask = (terminal != -1).float()
+        for i in range(len(terminal)):
+            if terminal[i] != -1:
+                terminal[i] = True
+                # print(terminal[i])
+            else:
+                terminal[i] = False
 
         # target Q
         with torch.no_grad():
             # 2. 目标网络做正向传播
-            next_q_online = self.model(next_state)
-            best_next_action = next_q_online.argmax(dim=1, keepdim=True)
-            next_q_target = self.target_model(next_state)
-            max_v = next_q_target.gather(1, best_next_action)
+            max_v = self.model(next_state).max(1, keepdim=True)
             # 3. TD 目标
-            target = reward + (1 - done_mask) * self.gamma * max_v
+            target = reward + (1 - terminal) * self.gamma * max_v.values
             # print("训练目标")
             # print(target)
 
@@ -160,8 +147,6 @@ class MyDQNAgent:
         self.optimizer.zero_grad()
         # 反向计算梯度
         loss.backward()
-        if self.gradient_clip_norm is not None and self.gradient_clip_norm > 0:
-            clip_grad_norm_(self.model.parameters(), self.gradient_clip_norm)
         # 梯度更新
         self.optimizer.step()
 
