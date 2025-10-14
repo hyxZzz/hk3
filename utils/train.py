@@ -1,5 +1,6 @@
 import time
 import argparse
+from dataclasses import dataclass
 import numpy as np
 import torch
 
@@ -56,99 +57,67 @@ def run_train_episode(agent, env, rpmemory, MEMORY_WARMUP_SIZE, LEARN_FREQ, BATC
     return total_reward, train_loss
 
 
-# 验证环境5次，取平均的奖励值
-def run_evaluate_episodes(agent, env, eval_episodes=10, render=False):
-    eval_reward = []
-
-    for i in range(eval_episodes):
-        state, escapeFlag, info = env.reset()
-        episode_reward = 0
-        t = 0
-        while True:
-            # 智能体选取动作执行
-            action = agent.predict(state)
-            state, reward, done, _ = env.step(action)
-            t += 1
-            episode_reward += reward
-            # if episode_reward < -1000 or episode_reward > 1000:
-            #     print(episode_reward)
-            # render 在此自建平台不支持，可在自己的计算机上开启
-            if render:
-                env.render()
-
-            if done != -1:
-                t = 0
-                break
-        eval_reward.append(episode_reward)
-
-    return np.mean(eval_reward)
+# 评估若干回合，返回奖励与成功率统计
+@dataclass
+class EvaluationMetrics:
+    mean_total_reward: float
+    mean_reward_per_step: float
+    success_rate: float
 
 
-# 验证环境5次，取平均的奖励值
-def run_mean_evaluate_episodes(agent, env, eval_episodes=5, render=False):
-    eval_reward = []
+def evaluate_agent(agent, env, eval_episodes=10, render=False):
+    total_rewards = []
+    per_step_rewards = []
+    successes = 0
 
-    for i in range(eval_episodes):
-        state, escapeFlag, info = env.reset()
-        episode_reward = 0
-        t = 0
-        """打印奖励R 距离状态dist 动作Act的题目"""
-        with open("state.txt", "a") as file:
-            file.write("new episode:....................................\n")
-            file.write("state for t=i \t ClosestDist \t ClosestMissileIndex\n")
-        with open("action.txt", "a") as file:
-            file.write("new episode:....................................\n")
-        with open("reward.txt", "a") as file:
-            file.write("new episode:....................................\n")
-        while True:
-            # 智能体选取动作执行
-            action = agent.predict(state)
-            state, reward, done, _ = env.step(action)
-            dist, index = env.getClosetMissileDist()
-            # if t == 0:
-            #     index_tmp = index
-            #     action_tmp = action
-            #     reward_tmp = reward
-            # if index_tmp == index and action_tmp == action and abs(reward_tmp-reward) > 20:
-            #     print("reward error attention!!!")
-            # index_tmp = index
-            # action_tmp = action
-            # reward_tmp = reward
+    previous_model_mode = agent.model.training
+    previous_target_mode = agent.target_model.training
+    previous_epsilon = agent.e_greed
 
-            # if dist < 2000:
-            #     print(dist)
+    agent.model.eval()
+    agent.target_model.eval()
+    agent.e_greed = 0.0
 
-            """打印奖励R 距离状态dist 动作Act"""
-            with open("state.txt", "a") as file:
-                file.write(f"state for t={t}: \t")
-                file.write(str(dist))
-                file.write("\t")
-                file.write(str(index))
-                file.write("\n")
-            with open("action.txt", "a") as file:
-                file.write(f"action for t={t}: \t")
-                file.write(str(action))
-                file.write("\n")
-            with open("reward.txt", "a") as file:
-                file.write(f"reward for t={t}: \t")
-                file.write(str(reward))
-                file.write("\n")
+    try:
+        for _ in range(eval_episodes):
+            state, _, _ = env.reset()
+            episode_reward = 0.0
+            steps = 0
+            success = False
 
-            t += 1
-            episode_reward += reward
-            # if episode_reward < -1000 or episode_reward > 1000:
-            #     print(episode_reward)
-            # render 在此自建平台不支持，可在自己的计算机上开启
-            if render:
-                env.render()
+            while True:
+                action = agent.predict(state)
+                state, reward, done, _ = env.step(action)
+                steps += 1
+                episode_reward += reward
 
-            if done != -1:
-                episode_reward /= t
-                t = 0
-                break
-        eval_reward.append(episode_reward)
+                if render:
+                    env.render()
 
-    return np.mean(eval_reward)
+                if done != -1:
+                    if done == 2:
+                        success = True
+                    break
+
+            total_rewards.append(episode_reward)
+            per_step_rewards.append(episode_reward / max(steps, 1))
+            if success:
+                successes += 1
+
+    finally:
+        agent.model.train(previous_model_mode)
+        agent.target_model.train(previous_target_mode)
+        agent.e_greed = previous_epsilon
+
+    mean_total_reward = float(np.mean(total_rewards)) if total_rewards else 0.0
+    mean_reward_per_step = float(np.mean(per_step_rewards)) if per_step_rewards else 0.0
+    success_rate = successes / float(eval_episodes) if eval_episodes > 0 else 0.0
+
+    return EvaluationMetrics(
+        mean_total_reward=mean_total_reward,
+        mean_reward_per_step=mean_reward_per_step,
+        success_rate=success_rate,
+    )
 
 def main():
 
@@ -160,6 +129,12 @@ def main():
     parser.add_argument('--batch_size', type=int, default=384, help='Batch size for training')
     parser.add_argument('--learning_rate', type=float, default=5e-4, help='Learning rate for training')
     parser.add_argument('--gamma', type=float, default=0.993, help='Discount factor')
+    parser.add_argument(
+        '--target_update_freq',
+        type=int,
+        default=15,
+        help='Number of learning steps between target network updates',
+    )
     parser.add_argument('--max_episode', type=int, default=1000, help='Maximum number of episodes')
     parser.add_argument(
         '--validation_episodes',
@@ -176,6 +151,7 @@ def main():
     BATCH_SIZE = args.batch_size
     LEARNING_RATE = args.learning_rate
     GAMMA = args.gamma
+    TARGET_UPDATE_FREQ = args.target_update_freq
 
     start = time.time()
 
@@ -197,7 +173,15 @@ def main():
     # 生成智能体
     model = Double_DQN(state_size=state_size, action_size=action_size)
 
-    agent = MyDQNAgent(model, action_size, gamma=GAMMA, lr=LEARNING_RATE, e_greed=0.85, e_greed_decrement=5e-7)
+    agent = MyDQNAgent(
+        model,
+        action_size,
+        gamma=GAMMA,
+        lr=LEARNING_RATE,
+        e_greed=0.85,
+        e_greed_decrement=5e-7,
+        update_target_steps=TARGET_UPDATE_FREQ,
+    )
 
     max_episode = 2000
 
@@ -222,16 +206,25 @@ def main():
         # train part
         for i in range(50):
             total_reward, train_loss = run_train_episode(agent, Env, rpm, MEMORY_WARMUP_SIZE, LEARN_FREQ, BATCH_SIZE)
-            writer.add_scalar('loss', train_loss, episode)
+            writer.add_scalar('train/loss', train_loss, episode)
             episode += 1
 
         # test part
         if episode % 50 == 0:
-            eval_reward = run_evaluate_episodes(agent, Env, render=False)
-            eval_mean_reward = run_mean_evaluate_episodes(agent, Env, render=False)
-            writer.add_scalar('eval reward', eval_reward, episode)
-            writer.add_scalar('eval_mean_reward', eval_mean_reward, episode)
-            print('episode:{}    e_greed:{}   Test reward:{}    Mean_Reward:{}   Train Loss:{}'.format(episode, agent.e_greed, eval_reward, eval_mean_reward, train_loss))
+            eval_metrics = evaluate_agent(agent, Env, eval_episodes=args.validation_episodes, render=False)
+            writer.add_scalar('eval/mean_total_reward', eval_metrics.mean_total_reward, episode)
+            writer.add_scalar('eval/mean_reward_per_step', eval_metrics.mean_reward_per_step, episode)
+            writer.add_scalar('eval/success_rate', eval_metrics.success_rate, episode)
+            print(
+                'episode:{}    e_greed:{}   Eval total reward:{:.4f}   Reward/step:{:.4f}   Success rate:{:.2%}   Train Loss:{}'.format(
+                    episode,
+                    agent.e_greed,
+                    eval_metrics.mean_total_reward,
+                    eval_metrics.mean_reward_per_step,
+                    eval_metrics.success_rate,
+                    train_loss,
+                )
+            )
         if episode % 100 == 0:
             ## 保存模型
             checkpoint_path = './models/DQNmodels/DDQNmodels3_23/DDQN_episode{}.pth'.format(episode)

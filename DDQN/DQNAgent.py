@@ -19,11 +19,20 @@ def soft_update(target, source, tau=0):
 
 class MyDQNAgent:
 
-    def __init__(self, model, action_size, gamma=None, lr=None, e_greed=0.1, e_greed_decrement=0):
+    def __init__(
+        self,
+        model,
+        action_size,
+        gamma=None,
+        lr=None,
+        e_greed=0.1,
+        e_greed_decrement=0,
+        update_target_steps=15,
+    ):
 
         self.action_size = action_size
         self.global_step = 0
-        self.update_target_steps = 15  # 更频繁地更新目标网络的参数以适应新的动力学
+        self.update_target_steps = max(1, int(update_target_steps))
         self.e_greed = e_greed  # ϵ-greedy中的ϵ
         self.e_greed_decrement = e_greed_decrement  # ϵ的动态更新因子
         self.model = model.to(device)
@@ -32,6 +41,9 @@ class MyDQNAgent:
         self.lr = lr
         self.mse_loss = nn.MSELoss(reduction='mean')
         self.optimizer = optim.Adam(lr=lr, params=self.model.parameters())
+
+    def _update_target_model(self):
+        self.target_model.load_state_dict(self.model.state_dict())
 
     # 使用行为策略生成动作
     def sample(self, state):
@@ -59,9 +71,10 @@ class MyDQNAgent:
 
         # '''此处将state置为全1数组看是否有影响'''
         # state = torch.ones(state.shape[0],  dtype=torch.float32)
-        pred_q = self.model(state).to(device)
+        with torch.no_grad():
+            pred_q = self.model(state)
         # 选取概率值最大的动作
-        act = int(pred_q.argmax())
+        act = int(pred_q.argmax().item())
 
         # 在概率值前三大的三个动作中选
         # k = 5  # 前k个
@@ -70,8 +83,6 @@ class MyDQNAgent:
         # act = act[0]
 
 
-        # print(act)
-        # act = np.random.randint(act, act + 3)
         return act
 
     # 更新DQN网络
@@ -89,55 +100,27 @@ class MyDQNAgent:
             loss(float)
         """
 
-        if self.global_step % self.update_target_steps == 0:
-            # 6. 更新目标网络
-            self.target_model.load_state_dict(self.model.state_dict())
-            # soft_update(self.target_model, self.model)
-        self.global_step += 1
+        state = torch.as_tensor(np.array(state), dtype=torch.float32, device=device)
+        action = torch.as_tensor(np.array(action), dtype=torch.int64, device=device).unsqueeze(-1)
+        reward = torch.as_tensor(np.array(reward), dtype=torch.float32, device=device).unsqueeze(-1)
+        next_state = torch.as_tensor(np.array(next_state), dtype=torch.float32, device=device)
+        done = torch.as_tensor(
+            (np.array(terminal) != -1).astype(np.float32),
+            dtype=torch.float32,
+            device=device,
+        ).unsqueeze(-1)
 
-        action = np.expand_dims(action, axis=-1)
-        reward = np.expand_dims(reward, axis=-1)
-        terminal = np.expand_dims(terminal, axis=-1)
-
-        state = np.array(state)
-        next_state = np.array(next_state)
-        state = torch.tensor(state, dtype=torch.float32).to(device)
-        # '''此处将state置为全1数组看是否有影响'''
-        # state = torch.ones(state.shape, dtype=torch.float32)
-        action = torch.tensor(action, dtype=torch.int32).to(device)
-        reward = torch.tensor(reward, dtype=torch.float32).to(device)
-        next_state = torch.tensor(next_state, dtype=torch.float32).to(device)
-        terminal = torch.tensor(terminal, dtype=torch.float32).to(device)
         # 1. DQN网络做正向传播
         pred_values = self.model(state)
-
-        # action的维度:2
-        action_dim = pred_values.shape[-1]
-
-        # 删除输入action的Shape中尺寸为1的维度
-        action = torch.squeeze(action, dim=-1)
-
-        # action进行onhot编码
-        action_onehot = nn.functional.one_hot(action.to(torch.int64), num_classes=action_dim)
-
-        pred_value = torch.multiply(pred_values, action_onehot)
-        pred_value = torch.sum(pred_value, dim=1, keepdim=True)
-
-        for i in range(len(terminal)):
-            if terminal[i] != -1:
-                terminal[i] = True
-                # print(terminal[i])
-            else:
-                terminal[i] = False
+        pred_value = pred_values.gather(1, action)
 
         # target Q
         with torch.no_grad():
-            # 2. 目标网络做正向传播
-            max_v = self.model(next_state).max(1, keepdim=True)
-            # 3. TD 目标
-            target = reward + (1 - terminal) * self.gamma * max_v.values
-            # print("训练目标")
-            # print(target)
+            next_q_online = self.model(next_state)
+            best_next_actions = next_q_online.argmax(dim=1, keepdim=True)
+            next_q_target = self.target_model(next_state)
+            max_next_q = next_q_target.gather(1, best_next_actions)
+            target = reward + (1.0 - done) * self.gamma * max_next_q
 
         # 4. TD 误差
         loss = self.mse_loss(pred_value, target)
@@ -149,5 +132,9 @@ class MyDQNAgent:
         loss.backward()
         # 梯度更新
         self.optimizer.step()
+
+        self.global_step += 1
+        if self.global_step % self.update_target_steps == 0:
+            self._update_target_model()
 
         return loss
