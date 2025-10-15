@@ -4,7 +4,7 @@
 本脚本固定使用
     /home/data/heyuxin/hangkong/1014/hk1/hk3/models/DQNmodels/DDQNmodels3_23/DDQN_episode300.pth
 这个 checkpoint，针对 seed=1 到 100（共 100 次），每次生成相同数量（100）的评估场景，
-顺序评估并输出每次的拦截成功率，同时把所有结果保存为 CSV。
+顺序评估并输出每次的拦截成功率与平均剩余拦截弹量，同时把所有结果保存为 CSV。
 
 示例用法（全部参数都有默认值，可以直接运行）::
 
@@ -60,8 +60,15 @@ def evaluate_on_shared_env(
     checkpoint_path: str,
     config: EvaluationConfig,
     seeds: ScenarioSeeds,
-) -> float:
-    """在一批共享（可复现）的场景上评估给定 checkpoint，返回成功率。"""
+) -> Tuple[float, float]:
+    """在一批共享（可复现）的场景上评估给定 checkpoint。
+
+    返回值
+    ------
+    (success_rate, avg_remaining_interceptors)
+        `success_rate` 为成功率，`avg_remaining_interceptors` 为每个 episode 结束时
+        剩余拦截弹数量的平均值。
+    """
 
     original_state = np.random.get_state()
     try:
@@ -78,6 +85,7 @@ def evaluate_on_shared_env(
         load_checkpoint(agent, checkpoint_path)
 
         successes = 0
+        total_remaining_interceptors = 0.0
         for seed in seeds.episode_seeds:
             np.random.seed(seed)
             state, done_flag, _ = env.reset()
@@ -87,21 +95,29 @@ def evaluate_on_shared_env(
                 if done_flag != -1:
                     if done_flag == 2:
                         successes += 1
+                    total_remaining_interceptors += float(env.interceptor_remain)
                     break
 
-        return successes / float(len(seeds.episode_seeds))
+        num_episodes = float(len(seeds.episode_seeds))
+        success_rate = successes / num_episodes
+        avg_remaining = total_remaining_interceptors / num_episodes
+        return success_rate, avg_remaining
     finally:
         np.random.set_state(original_state)
 
 
-def write_results_csv(path: str, results: Iterable[Tuple[int, str, float]]) -> None:
-    """将 (seed, checkpoint, success_rate) 结果以 CSV 形式写入 path。"""
+def write_results_csv(path: str, results: Iterable[Tuple[int, float, float]]) -> None:
+    """将 (seed, success_rate, avg_remaining_interceptors) 结果写入 CSV。"""
 
     with open(path, "w", encoding="utf-8", newline="") as csv_file:
         writer = csv.writer(csv_file)
-        writer.writerow(["seed", "checkpoint", "success_rate"])
-        for seed, checkpoint, success_rate in results:
-            writer.writerow([seed, checkpoint, f"{success_rate:.6f}"])
+        writer.writerow(["seed", "success_rate", "avg_remaining_interceptors"])
+        for seed, success_rate, avg_remaining in results:
+            writer.writerow([
+                seed,
+                f"{success_rate:.6f}",
+                f"{avg_remaining:.6f}",
+            ])
 
 
 def parse_args() -> argparse.Namespace:
@@ -185,12 +201,15 @@ def main() -> None:
     if args.start_seed > args.end_seed:
         raise ValueError(f"--start-seed({args.start_seed}) 不能大于 --end-seed({args.end_seed})")
 
-    results: List[Tuple[int, str, float]] = []
+    results: List[Tuple[int, float, float]] = []
     for seed in range(args.start_seed, args.end_seed + 1):
         seeds = generate_scenario_seeds(config.episodes, base_seed=seed)
-        success_rate = evaluate_on_shared_env(checkpoint_path, config, seeds)
-        print(f"Seed {seed:>3} | success rate: {success_rate:.4f} | {checkpoint_path}")
-        results.append((seed, checkpoint_path, success_rate))
+        success_rate, avg_remaining = evaluate_on_shared_env(checkpoint_path, config, seeds)
+        print(
+            f"Seed {seed:>3} | success rate: {success_rate:.4f} | "
+            f"avg remaining interceptors: {avg_remaining:.2f}"
+        )
+        results.append((seed, success_rate, avg_remaining))
 
     # 写入 CSV
     output_dir = args.output_dir
