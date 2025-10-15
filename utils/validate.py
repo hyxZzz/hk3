@@ -28,7 +28,7 @@ class EvaluationConfig:
     """Configuration values used during validation."""
 
     episodes: int = 100
-    num_missiles: int = 3
+    num_missiles: int = 2
     step_num: int = 3500
     gamma: float = 0.993
     learning_rate: float = 5e-4

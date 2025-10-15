@@ -16,10 +16,11 @@ Gostep = 1  # 机动策略改变的频率
 INTERCEPT_SUCCESS_DISTANCE = 20.0  # 拦截弹与导弹的命中阈值
 MISSILE_HIT_DISTANCE = 20.0  # 来袭导弹命中飞机的阈值
 SPARSE_REWARD_SCALE = 0.75  # 稀疏奖励的尺度
-DANGER_DISTANCE = 3000 # 危险距离 用于奖励函数的非线性分段
-LanchGap = 70 # 发射间隔
-ERRACTIONSCALE = 2 # 惩罚加的系数 原先设为10
-DANGERSCALE = 3 # 危险情况下 距离影响的系数 原先设为5
+# 8v2 场景下威胁密度降低，适度收紧危险距离并减弱危险放大奖励系数，避免奖励剧烈波动
+DANGER_DISTANCE = 2800  # 危险距离 用于奖励函数的非线性分段
+LanchGap = 70  # 发射间隔
+ERRACTIONSCALE = 2  # 惩罚加的系数 原先设为10
+DANGERSCALE = 2.5  # 危险情况下 距离影响的系数 原先设为5
 CURIOSITYSCALE = 0.5 #  好奇心加数 鼓励探索
 class ManeuverEnv:
     """
@@ -29,7 +30,7 @@ class ManeuverEnv:
                         """
 
     def __init__(self, missileList: List[Missiles], aircraftList: Aircraft, planeSpeed=170,
-                 missilesNum=3, spaceSize=5000, missilesSpeed=680, InterceptorNum=8, InterceptorSpeed=540):
+                 missilesNum=2, spaceSize=5000, missilesSpeed=680, InterceptorNum=8, InterceptorSpeed=540):
         self.escapeFlag = -1
         self.action_space = spaces.Discrete(act_num)
         self.spaceSize = spaceSize
@@ -301,9 +302,12 @@ class ManeuverEnv:
         """
 
     def _gen_action(self, c, goal=None):
-        if goal == None:
-            return
+        if goal is None:
+            goal = -1
 
+        goal = int(goal)
+        if goal < -1:
+            goal = -1
         return self.AirCraftActions(c, goal)
 
     def _get_obs(self):
@@ -351,8 +355,10 @@ class ManeuverEnv:
         if active_missiles <= 0:
             return False
 
-        base_limit = max(1, m.ceil(self.interceptorNum / max(1, self.missileNum)))
-        focus_bonus = max(0, self.missileNum - active_missiles)
+        # 8v2 下默认配比为 8:2，此处保留一定冗余但限制同一目标的集中火力
+        ratio = self.interceptorNum / max(1, self.missileNum)
+        base_limit = max(1, m.floor(ratio * 0.75))
+        focus_bonus = 1 if active_missiles < self.missileNum else 0
         max_lock = min(self.interceptorNum, base_limit + focus_bonus)
 
         if locked_Num >= max_lock:
@@ -510,9 +516,10 @@ class ManeuverEnv:
             active_missiles = max(1, self.getRemainMissileNum())
             idle_interceptors = sum(1 for itr in self.interceptorList if itr.attacking == -1)
             if self.LockConstraint(missile_index) and idle_interceptors > 0:
-                focus_penalty = idle_interceptors / active_missiles
+                reserve_ratio = idle_interceptors / max(1, self.interceptorNum)
+                focus_penalty = reserve_ratio * (self.missileNum / active_missiles)
                 if interceptor_goal not in (-1, missile_index):
-                    focus_penalty += 1 / active_missiles
+                    focus_penalty += 0.5 * (self.missileNum / active_missiles)
                 rm = -DANGERSCALE * focus_penalty
         rd += rm
 
@@ -559,14 +566,17 @@ class ManeuverEnv:
                 elif itr.attacking != -1 and itr.T_i not in (-1, missile_index):
                     wrong_lock += 1
 
-            rl += 1.8 * engaged_on_threat
+            current_threats = max(1, self.getRemainMissileNum())
+            threat_scale = current_threats / max(1, self.missileNum)
+            rl += 1.5 * threat_scale * engaged_on_threat
             can_focus = self.LockConstraint(missile_index)
             if can_focus:
-                rl -= ERRACTIONSCALE * wrong_lock
+                wrong_lock_penalty = ERRACTIONSCALE * (self.missileNum / current_threats)
+                rl -= wrong_lock_penalty * wrong_lock
                 if interceptor_goal == missile_index:
-                    rl += 0.6
+                    rl += 0.6 * threat_scale
                 elif interceptor_goal not in (-1, missile_index):
-                    rl -= ERRACTIONSCALE * 0.5
+                    rl -= wrong_lock_penalty * 0.5
         rd += rl
 
         """
@@ -595,7 +605,8 @@ class ManeuverEnv:
         # 防止没有拦截弹发射时导致的除法错误
         if lock_num != 0:
             if dangerFlag:
-                C6 = DANGERSCALE
+                active_missiles = max(1, self.getRemainMissileNum())
+                C6 = DANGERSCALE * (active_missiles / max(1, self.missileNum))
             rd += C6 * ri / lock_num
 
         # if rd > 51 or rd < -20:
@@ -687,10 +698,15 @@ class ManeuverEnv:
         else:
             goal = -1
 
-        if interceptor_goal == None:
+        if interceptor_goal is None:
             [nx, ny, roll, pitch_constraint], interceptor_goal = self._gen_action(action, goal)
         else:
             [nx, ny, roll, pitch_constraint], interceptor_goal = self._gen_action(action, interceptor_goal)
+
+        if interceptor_goal is not None:
+            interceptor_goal = int(interceptor_goal)
+            if interceptor_goal < 0 or interceptor_goal >= self.missileNum:
+                interceptor_goal = -1
         return [nx, ny, roll, pitch_constraint], interceptor_goal
 
     def step(self, action):
@@ -833,7 +849,7 @@ class ManeuverEnv:
         info = 'Go on Combating...'
         missileList, aircraftList, planeSpeed, missiles_num, spaceSize, missilesSpeed = reset_para(
             num_missiles=missilesNum)
-        self.missileNum = missilesNum
+        self.missileNum = missiles_num
         self.missileSpeed = missilesSpeed
         self.planeSpeed = planeSpeed
         self.missileList = missileList
@@ -902,28 +918,33 @@ class ManeuverEnv:
 
     """发射策略"""
     def LanchPolicy(self, interceptor_goal):
+        if interceptor_goal is None:
+            return False
+
+        interceptor_goal = int(interceptor_goal)
+        if interceptor_goal < 0 or interceptor_goal >= self.missileNum:
+            return False
+
         # 两次发射间隔步数
         if abs(self.t - self.lanchTime) >= LanchGap:
-            # 目标没锁满
-                    if self.LockConstraint(interceptor_goal):
-                        for i in range(self.interceptorNum):
-                            # 待发射的导弹
-                            if self.interceptorList[i].T_i == -1:
-                                interceptor = self.interceptorList[i]
-                                interceptor.sync_with_aircraft(
-                                    [self.aircraftList.X, self.aircraftList.Y, self.aircraftList.Z],
-                                    self.aircraftList.Pitch,
-                                    self.aircraftList.Heading,
-                                    self.aircraftList.V,
-                                )
-                                launch_speed = max(self.aircraftList.V, self.interceptorSpeed)
-                                interceptor.begin_pursuit(interceptor_goal, launch_speed)
-                                self.interceptor_remain -= 1
-                                self.lanchTime = self.t
-                                return True
+            if self.LockConstraint(interceptor_goal):
+                for i in range(self.interceptorNum):
+                    # 待发射的导弹
+                    if self.interceptorList[i].T_i == -1:
+                        interceptor = self.interceptorList[i]
+                        interceptor.sync_with_aircraft(
+                            [self.aircraftList.X, self.aircraftList.Y, self.aircraftList.Z],
+                            self.aircraftList.Pitch,
+                            self.aircraftList.Heading,
+                            self.aircraftList.V,
+                        )
+                        launch_speed = max(self.aircraftList.V, self.interceptorSpeed)
+                        interceptor.begin_pursuit(interceptor_goal, launch_speed)
+                        self.interceptor_remain -= 1
+                        self.lanchTime = self.t
+                        return True
 
-        else:
-            return False
+        return False
 
 
 
