@@ -86,11 +86,19 @@ def evaluate_on_shared_env(
 
         successes = 0
         total_remaining_interceptors = 0.0
+
         def _extract_state_and_flag(result: Sequence[object], source: str) -> Tuple[np.ndarray, int]:
-            """兼容 reset/step 返回值的辅助函数。"""
+            """兼容不同环境实现返回值的辅助函数。
+
+            旧版本环境的 ``reset`` 只返回 ``(state, escape_flag, info)`` 三个元素，
+            而 ``step`` 返回 ``(state, reward, escape_flag, info)`` 四个元素。新版本
+            则与 Gym 一致，``reset``/``step`` 都返回四元组。为了在两种实现之间
+            平滑过渡，我们根据返回值长度来提取 ``state`` 与 ``escape_flag``。
+            """
 
             if not isinstance(result, tuple):
                 raise TypeError(f"env.{source}() 应返回 tuple，得到 {type(result)!r}")
+
             if len(result) == 4:
                 state, _, done_flag, _ = result
             elif len(result) == 3:
@@ -99,7 +107,18 @@ def evaluate_on_shared_env(
                 raise ValueError(
                     f"env.{source}() 返回值数量异常（期望 3 或 4 个，得到 {len(result)} 个）"
                 )
-            return state, int(done_flag)
+
+            try:
+                done_flag_int = int(done_flag)
+            except (TypeError, ValueError) as exc:  # pragma: no cover - 容错分支
+                raise TypeError(
+                    f"env.{source}() 返回的结束标志无法转换为整数：{done_flag!r}"
+                ) from exc
+
+            if not isinstance(state, np.ndarray):
+                state = np.asarray(state, dtype=np.float32)
+
+            return state, done_flag_int
 
         for seed in seeds.episode_seeds:
             np.random.seed(seed)
