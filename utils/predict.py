@@ -36,14 +36,49 @@ def calTreatFromState(apos, mpos, v_a, v_m):
 LEARNING_RATE = 5e-4
 MAXSTEP = 3500
 GAMMA = 0.993
-DEFAULT_NUM_MISSILES = 3
+DEFAULT_NUM_MISSILES = 2
 DEFAULT_INTERCEPTOR_NUM = 8
+
+
+def _extract_entity_traces(state_array, missile_num=None, interceptor_num=None):
+    """Split ``state_array`` into plane, missile and interceptor trajectories.
+
+    Args:
+        state_array: Array with shape ``(steps, entities, features)`` storing the
+            time history returned by ``ManeuverEnv._get_obs``.
+        missile_num: Optional override for the number of missiles represented in
+            ``state_array``.
+        interceptor_num: Optional override for the number of interceptors.
+
+    Returns:
+        A tuple ``(plane, missiles, interceptors, missile_count, interceptor_count)``
+        where ``plane`` has shape ``(steps, 3)`` and the remaining arrays keep the
+        spatial traces (x, y, z) for each entity group.
+    """
+
+    total_entities = state_array.shape[1]
+    if interceptor_num is None:
+        interceptor_num = min(DEFAULT_INTERCEPTOR_NUM, max(0, total_entities - 1))
+    if missile_num is None:
+        missile_num = max(0, total_entities - interceptor_num - 1)
+
+    # Clamp to avoid negative slicing should the recorded array be smaller than
+    # the assumed configuration.
+    missile_num = min(missile_num, max(0, total_entities - 1))
+    interceptor_start = 1 + missile_num
+    interceptor_num = min(interceptor_num, max(0, total_entities - interceptor_start))
+
+    plane_state = state_array[:, 0, 0:3]
+    missile_state = state_array[:, 1:interceptor_start, 0:3]
+    interceptor_state = state_array[:, interceptor_start:interceptor_start + interceptor_num, 0:3]
+
+    return plane_state, missile_state, interceptor_state, missile_num, interceptor_num
 
 
 # 预测函数，输入模型的保存地址，进行一次预测，返回一次游戏的state序列
 
 def predictResult(model_path):
-    # 生成2个导弹的 随机的 环境
+    # 生成2个导弹的随机环境
     Env, aircraft, missiles = init_env(
         num_missiles=DEFAULT_NUM_MISSILES,
         StepNum=3500,
@@ -214,18 +249,15 @@ def showPredictProgress(t, Multistate, axList):
     ax1 = axList[0]
     ax2 = axList[1]
     maxstep = t
-    missileNum = DEFAULT_NUM_MISSILES
-    planeState = state[:, 0, 0:3]
-    missileState = state[:, 1:missileNum + 1, 0:3]
-    interceptorState = state[:, missileNum + 1:, 0:3]
+    planeState, missileState, interceptorState, missileNum, interceptorNum = _extract_entity_traces(state)
+
     ax1.plot(planeState[0:maxstep, 0], planeState[0:maxstep, 2], planeState[0:maxstep, 1], linewidth=4, c='b')
     for i in range(missileNum):
         ax1.plot(missileState[0:maxstep, i, 0], missileState[0:maxstep, i, 2], missileState[0:maxstep, i, 1],
                  linewidth=2, c='r')
 
-    for i in range(DEFAULT_INTERCEPTOR_NUM):
-        ax1.plot(interceptorState[0:maxstep, i, 0], interceptorState[0:maxstep, i, 2],
-                 interceptorState[0:maxstep, i, 1],
+    for i in range(interceptorNum):
+        ax1.plot(interceptorState[0:maxstep, i, 0], interceptorState[0:maxstep, i, 2], interceptorState[0:maxstep, i, 1],
                  linewidth=2, c='g')
     # for i in range(missileNum):
     #     ax1.plot(:, )
@@ -239,7 +271,6 @@ def showPredictResult(t, statefromEnv, Treat_value):
     state = statefromEnv
     Treat_value = copy.deepcopy(Treat_value[0:t])
     maxstep = t
-    missileNum = DEFAULT_NUM_MISSILES
     ax1 = fig.add_subplot(121, projection='3d', alpha=0.8)
     ax2 = fig.add_subplot(122)
 
@@ -250,17 +281,15 @@ def showPredictResult(t, statefromEnv, Treat_value):
     legend_lines = [mpl.lines.Line2D([0], [0], linestyle="none", marker='o', c=color[y]) for y in y_unique]
     legend_labels = [methods[y] for y in y_unique]
     ax1.legend(legend_lines, legend_labels, numpoints=1, title='机动与拦截', fontsize=18)
-    planeState = state[:, 0, 0:3]
-    missileState = state[:, 1:missileNum + 1, 0:3]
-    interceptorState = state[:, missileNum + 1:, 0:3]
+    planeState, missileState, interceptorState, missileNum, interceptorNum = _extract_entity_traces(state)
+
     ax1.plot(planeState[0:maxstep, 0], planeState[0:maxstep, 2], planeState[0:maxstep, 1], linewidth=4, c='b')
     for i in range(missileNum):
         ax1.plot(missileState[0:maxstep, i, 0], missileState[0:maxstep, i, 2], missileState[0:maxstep, i, 1],
                  linewidth=2, c='r')
 
-    for i in range(DEFAULT_INTERCEPTOR_NUM):
-        ax1.plot(interceptorState[0:maxstep, i, 0], interceptorState[0:maxstep, i, 2],
-                 interceptorState[0:maxstep, i, 1],
+    for i in range(interceptorNum):
+        ax1.plot(interceptorState[0:maxstep, i, 0], interceptorState[0:maxstep, i, 2], interceptorState[0:maxstep, i, 1],
                  linewidth=2, c='g')
     # for i in range(missileNum):
     #     ax1.plot(:, )
@@ -283,7 +312,6 @@ def compare_figure(t_p, statefromEnv_p, Treat_value_p, t_com, statefromEnv_com, 
     Treat_value_p = copy.deepcopy(Treat_value_p[0:t_p])
     Treat_value_com = copy.deepcopy(Treat_value_com[0:t_com])
     maxstep = t_p
-    missileNum = DEFAULT_NUM_MISSILES
     ax1 = fig.add_subplot(221, projection='3d', alpha=0.8)
     ax2 = fig.add_subplot(222)
     ax3 = fig.add_subplot(223, projection='3d', alpha=0.8)
@@ -297,32 +325,28 @@ def compare_figure(t_p, statefromEnv_p, Treat_value_p, t_com, statefromEnv_com, 
     legend_labels = [methods[y] for y in y_unique]
     ax1.legend(legend_lines, legend_labels, numpoints=1, title='机动与拦截-预测', fontsize=5)
     ax3.legend(legend_lines, legend_labels, numpoints=1, title='机动与拦截-对比', fontsize=5)
-    planeState = state_p[:, 0, 0:3]
-    missileState = state_p[:, 1:missileNum + 1, 0:3]
-    interceptorState = state_p[:, missileNum + 1:, 0:3]
-    ax1.plot(planeState[0:maxstep, 0], planeState[0:maxstep, 2], planeState[0:maxstep, 1], linewidth=4, c='b')
-    for i in range(missileNum):
-        ax1.plot(missileState[0:maxstep, i, 0], missileState[0:maxstep, i, 2], missileState[0:maxstep, i, 1],
+    planeState_p, missileState_p, interceptorState_p, missileNum_p, interceptorNum_p = _extract_entity_traces(state_p)
+
+    ax1.plot(planeState_p[0:maxstep, 0], planeState_p[0:maxstep, 2], planeState_p[0:maxstep, 1], linewidth=4, c='b')
+    for i in range(missileNum_p):
+        ax1.plot(missileState_p[0:maxstep, i, 0], missileState_p[0:maxstep, i, 2], missileState_p[0:maxstep, i, 1],
                  linewidth=2, c='r')
 
-    for i in range(DEFAULT_INTERCEPTOR_NUM):
-        ax1.plot(interceptorState[0:maxstep, i, 0], interceptorState[0:maxstep, i, 2],
-                 interceptorState[0:maxstep, i, 1],
+    for i in range(interceptorNum_p):
+        ax1.plot(interceptorState_p[0:maxstep, i, 0], interceptorState_p[0:maxstep, i, 2], interceptorState_p[0:maxstep, i, 1],
                  linewidth=2, c='g')
 
     # 对比的数据
     maxstep = t_com
-    planeState = state_com[:, 0, 0:3]
-    missileState = state_com[:, 1:missileNum + 1, 0:3]
-    interceptorState = state_com[:, missileNum + 1:, 0:3]
-    ax3.plot(planeState[0:maxstep, 0], planeState[0:maxstep, 2], planeState[0:maxstep, 1], linewidth=4, c='b')
-    for i in range(missileNum):
-        ax3.plot(missileState[0:maxstep, i, 0], missileState[0:maxstep, i, 2], missileState[0:maxstep, i, 1],
+    planeState_c, missileState_c, interceptorState_c, missileNum_c, interceptorNum_c = _extract_entity_traces(state_com)
+
+    ax3.plot(planeState_c[0:maxstep, 0], planeState_c[0:maxstep, 2], planeState_c[0:maxstep, 1], linewidth=4, c='b')
+    for i in range(missileNum_c):
+        ax3.plot(missileState_c[0:maxstep, i, 0], missileState_c[0:maxstep, i, 2], missileState_c[0:maxstep, i, 1],
                  linewidth=2, c='r')
 
-    for i in range(DEFAULT_INTERCEPTOR_NUM):
-        ax3.plot(interceptorState[0:maxstep, i, 0], interceptorState[0:maxstep, i, 2],
-                 interceptorState[0:maxstep, i, 1],
+    for i in range(interceptorNum_c):
+        ax3.plot(interceptorState_c[0:maxstep, i, 0], interceptorState_c[0:maxstep, i, 2], interceptorState_c[0:maxstep, i, 1],
                  linewidth=2, c='g')
     # for i in range(missileNum):
     #     ax1.plot(:, )

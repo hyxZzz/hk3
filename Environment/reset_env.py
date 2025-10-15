@@ -4,7 +4,7 @@ from utils.common import ComputeHeading, ComputePitch
 from flat_models.trajectory import Aircraft, Missiles
 
 
-def reset_para(num_missiles=3, StepNum=1200):
+def reset_para(num_missiles=2, StepNum=1200):
     # 飞机的初始位置，x和y为[-10000, 10000], z为服从2000为均值，300为标准差的正态分布
 
     # 飞行高度8~12Km

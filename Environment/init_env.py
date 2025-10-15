@@ -7,7 +7,7 @@ from flat_models.trajectory import Aircraft, Missiles
 
 # 环境的来袭导弹数num_missiles，最大步数StepNum
 
-def init_env(num_missiles=3, StepNum=1000, interceptor_num=8):
+def init_env(num_missiles=2, StepNum=1000, interceptor_num=8):
     # 飞机的初始位置，x和y为[-10000, 10000], z为服从2000为均值，300为标准差的正态分布
 
     # 飞行高度8~12Km

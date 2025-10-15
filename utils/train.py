@@ -155,7 +155,7 @@ def main():
 
     start = time.time()
 
-    num_missiles = 3
+    num_missiles = 2
     step_num = 3500
     Env, aircraft, missiles = init_env(
         num_missiles=num_missiles,
