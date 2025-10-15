@@ -86,12 +86,27 @@ def evaluate_on_shared_env(
 
         successes = 0
         total_remaining_interceptors = 0.0
+        def _extract_state_and_flag(result: Sequence[object], source: str) -> Tuple[np.ndarray, int]:
+            """兼容 reset/step 返回值的辅助函数。"""
+
+            if not isinstance(result, tuple):
+                raise TypeError(f"env.{source}() 应返回 tuple，得到 {type(result)!r}")
+            if len(result) == 4:
+                state, _, done_flag, _ = result
+            elif len(result) == 3:
+                state, done_flag, _ = result
+            else:
+                raise ValueError(
+                    f"env.{source}() 返回值数量异常（期望 3 或 4 个，得到 {len(result)} 个）"
+                )
+            return state, int(done_flag)
+
         for seed in seeds.episode_seeds:
             np.random.seed(seed)
-            state, _, done_flag, _ = env.reset()
+            state, done_flag = _extract_state_and_flag(env.reset(), "reset")
             while True:
                 action = select_action(agent, state)
-                state, _, done_flag, _ = env.step(action)
+                state, done_flag = _extract_state_and_flag(env.step(action), "step")
                 if done_flag != -1:
                     if done_flag == 2:
                         successes += 1
