@@ -9,7 +9,7 @@
 示例用法（全部参数都有默认值，可以直接运行）::
 
     python -m utils.test \
-        --checkpoint /home/data/heyuxin/hangkong/1014/hk1/hk3/models/DQNmodels/DDQNmodels3_23/DDQN_episode300.pth \
+        --checkpoint /home/data/heyuxin/hangkong/1015/hk3/models/DQNmodels/DDQNmodels3_23/DDQN_episode400.pth \
         --episodes 100 \
         --start-seed 1 \
         --end-seed 100
